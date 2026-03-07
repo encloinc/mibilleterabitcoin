@@ -1,6 +1,4 @@
-[package]
-name = "europa"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
+[workspace]
+members = ["apps/europa", "crates/europa-common"]
+default-members = ["apps/europa"]
+resolver = "2"

@@ -1,0 +1,17 @@
+{
+  "name": "europa-monorepo",
+  "packageManager": "npm@11.3.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "crates/*"
+  ],
+  "scripts": {
+    "build:wasm": "npm run build:wasm --workspace europa-common",
+    "dev": "npm run dev:europa",
+    "dev:europa": "npm run build:wasm && turbo run dev --filter=europa"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.6"
+  }
+}
