@@ -18,10 +18,16 @@ struct AppState {
 async fn main() -> anyhow::Result<()> {
     let config = Arc::new(AppConfig::from_args()?);
     let bind_address = config.bind_address();
+    let web_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/web");
 
     let app = Router::new()
-        .route("/", get(index))
-        .nest_service("/assets", ServeDir::new("src/web/assets"))
+        .route("/", get(app))
+        .route("/create-wallet", get(app))
+        .route("/import-wallet", get(app))
+        .route("/unlock-wallet", get(app))
+        .route("/wallet", get(app))
+        .nest_service("/assets/svgs", ServeDir::new(web_root.join("svgs")))
+        .nest_service("/assets", ServeDir::new(web_root.join("assets")))
         .with_state(AppState {
             config: Arc::clone(&config),
         });
@@ -39,11 +45,11 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn index(State(state): State<AppState>) -> Html<String> {
-    Html(render_index(&state.config).into_string())
+async fn app(State(state): State<AppState>) -> Html<String> {
+    Html(render_app(&state.config).into_string())
 }
 
-fn render_index(config: &AppConfig) -> Markup {
+fn render_app(config: &AppConfig) -> Markup {
     let client_config = serde_json::to_string(&config.client_config())
         .expect("client config serialization should always succeed");
 
@@ -57,31 +63,29 @@ fn render_index(config: &AppConfig) -> Markup {
                 link rel="stylesheet" href="/assets/styles.css";
             }
             body {
-                main class="shell" {
-                    section class="hero" {
-                        div class="hero-copy" {
-                            p class="eyebrow" { "Europa" }
-                            h1 { "A minimal Bitcoin wallet onboarding flow." }
-                            p class="lede" {
-                                "Create a 12-word wallet, verify you backed it up, or import an existing phrase. "
-                                "The server only renders this page and serves the static client assets."
-                            }
-                        }
-                        div class="network-card" {
-                            span class="label" { "Network" }
-                            strong id="network-badge" { (config.network.as_str()) }
-                        }
+                main class="app-shell" {
+                    header class="app-brand" {
+                        img
+                            class="brand-lockup"
+                            src="/assets/svgs/europa-logotype.svg"
+                            alt="Europa";
                     }
-
                     p id="flash" class="flash hidden" role="status" aria-live="polite" {}
 
-                    (onboard::landing::render())
-                    (onboard::create::render())
-                    (onboard::backup::render())
-                    (onboard::verify::render())
-                    (onboard::import::render())
-                    (onboard::unlock::render())
-                    (wallet::dashboard::render())
+                    div class="screen-stage" {
+                        (onboard::landing::render())
+                        (onboard::create::render())
+                        (onboard::backup::render())
+                        (onboard::verify::render())
+                        (onboard::import::render())
+                        (onboard::unlock::render())
+                        (wallet::dashboard::render())
+                    }
+
+                    p class="network-note" {
+                        "Network: "
+                        span { (config.network.as_str()) }
+                    }
                 }
 
                 script {

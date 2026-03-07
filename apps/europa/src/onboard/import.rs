@@ -1,45 +1,109 @@
 use maud::{Markup, html};
 
+use super::components::{
+    flow_header, input_field, link_button, password_strength_indicator, password_toggle,
+};
+
 pub fn render() -> Markup {
     html! {
-        section id="import-screen" class="screen card hidden" {
-            h2 { "Import wallet" }
-            p class="muted" { "Enter the 12-word phrase and choose the password used to protect it in this browser." }
-            form id="import-form" class="stack" autocomplete="off" {
-                div class="word-grid import-grid" {
+        section id="import-phrase-screen" class="screen card card-compact flow-card hidden" {
+            (flow_header(
+                Some("landing-screen"),
+                Some((1, 2)),
+                "Importar Wallet",
+                "Ingresa las 12 palabras de tu frase para validar tu wallet antes de continuar.",
+            ))
+
+            form id="import-phrase-form" class="stack flow-form" autocomplete="off" {
+                div class="input-grid" {
                     @for index in 0..12 {
-                        label class="import-field" {
-                            span { (format!("Word {}", index + 1)) }
-                            input
-                                type="text"
-                                data-import-word=(index)
-                                spellcheck="false"
-                                autocapitalize="off"
-                                autocomplete="off"
-                                required;
-                        }
+                        (input_field(
+                            None,
+                            html! {
+                                input
+                                    class="input-control"
+                                    type="text"
+                                    data-import-word=(index)
+                                    placeholder=(format!("Palabra #{}", index + 1))
+                                    spellcheck="false"
+                                    autocapitalize="off"
+                                    autocomplete="off"
+                                    required;
+                            },
+                            Some(html! { span class="input-slot-text" { (format!("{}.", index + 1)) } }),
+                            None,
+                        ))
                     }
                 }
 
-                label for="import-password" { "Password" }
-                input
-                    id="import-password"
-                    type="password"
-                    minlength="8"
-                    autocomplete="new-password"
-                    required;
+                div class="actions flow-actions" {
+                    (link_button(
+                        "screen-submit",
+                        "/import-wallet#choose-password",
+                        None,
+                        Some("import-phrase-form"),
+                        true,
+                        html! { "Continuar" },
+                    ))
+                }
+            }
+        }
 
-                label for="import-password-confirm" { "Confirm password" }
-                input
-                    id="import-password-confirm"
-                    type="password"
-                    minlength="8"
-                    autocomplete="new-password"
-                    required;
+        section id="import-password-screen" class="screen card card-compact flow-card hidden" {
+            (flow_header(
+                Some("import-phrase-screen"),
+                Some((2, 2)),
+                "Protege tu Wallet",
+                "Define una contraseña para cifrar la wallet importada en este navegador.",
+            ))
 
-                div class="actions" {
-                    button type="submit" class="primary" { "Import wallet" }
-                    button type="button" class="ghost" data-back="landing-screen" { "Back" }
+            form id="import-password-form" class="stack flow-form" autocomplete="off" {
+                (input_field(
+                    Some(html! { label class="input-label" for="import-password" { "Contraseña" } }),
+                    html! {
+                        input
+                            class="input-control"
+                            id="import-password"
+                            type="password"
+                            minlength="8"
+                            autocomplete="off"
+                            data-1p-ignore="true"
+                            data-lpignore="true"
+                            required;
+                    },
+                    None,
+                    Some(password_toggle("import-password")),
+                ))
+
+                (password_strength_indicator("import-password"))
+
+                (input_field(
+                    Some(html! { label class="input-label" for="import-password-confirm" { "Confirmar contraseña" } }),
+                    html! {
+                        input
+                            class="input-control"
+                            id="import-password-confirm"
+                            type="password"
+                            minlength="8"
+                            autocomplete="off"
+                            data-1p-ignore="true"
+                            data-lpignore="true"
+                            data-match-id="import-password"
+                            required;
+                    },
+                    None,
+                    Some(password_toggle("import-password-confirm")),
+                ))
+
+                div class="actions flow-actions" {
+                    (link_button(
+                        "screen-submit",
+                        "/wallet",
+                        None,
+                        Some("import-password-form"),
+                        true,
+                        html! { "Importar Wallet" },
+                    ))
                 }
             }
         }
