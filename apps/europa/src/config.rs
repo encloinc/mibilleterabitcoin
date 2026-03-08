@@ -81,7 +81,7 @@ impl AppConfig {
     pub fn client_config(&self) -> ClientConfig {
         ClientConfig {
             network: self.network.as_str(),
-            storage_key: format!("europa.wallet.v1.{}", self.network.as_str()),
+            storage_key: format!("mibilleterabitcoin.wallet.v1.{}", self.network.as_str()),
         }
     }
 }

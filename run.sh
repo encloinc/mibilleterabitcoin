@@ -5,4 +5,4 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_PATH="${1:-config.json}"
 
 cd "$SCRIPT_DIR"
-exec cargo run -p europa -- --config "$CONFIG_PATH"
+exec cargo run -p mibilleterabitcoin -- --config "$CONFIG_PATH"

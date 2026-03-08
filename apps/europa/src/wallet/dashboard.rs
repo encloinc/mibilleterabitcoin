@@ -12,7 +12,7 @@ pub fn render() -> Markup {
             div class="wallet-card-body" {
                 button type="button" class="wallet-account-card" {
                     div class="wallet-account-leading" {
-                        img class="wallet-account-icon" src="/assets/svgs/europa-icon.svg" alt="";
+                        img class="wallet-account-icon" src="/assets/svgs/mibilleterabitcoin-icon.svg" alt="";
                         div class="wallet-account-copy" {
                             p class="wallet-account-title" { "Mi cuenta" }
                             p id="wallet-address" class="wallet-account-address" { "tb1qvcw8t...6sm7pudqz" }
@@ -53,7 +53,7 @@ pub fn render() -> Markup {
                     }
                 }
 
-                div class="wallet-transactions-section" {
+                div class="wallet-transactions-section" data-drag-scroll-area {
                     h3 class="wallet-section-title" { "Transacciones" }
 
                     div class="wallet-transactions-list" {

@@ -8,9 +8,13 @@ pub fn render() -> Markup {
             (flow_header(
                 Some("create-screen"),
                 Some((2, 3)),
-                "Crear Wallet",
-                "Por favor escribe las siguientes 12 palabras en un papel. Sera la unica manera de poder recuperar tu bitcoin en caso de que pierdas acceso a este dispositivo.",
+                "Respalda tu billetera",
+                "",
             ))
+
+            p class="backup-warning" {
+                "Sera la unica manera de poder recuperar tu bitcoin en caso de que pierdas acceso a este dispositivo."
+            }
 
             div id="mnemonic-grid" class="seed-grid" {
                 @for index in 0..12 {

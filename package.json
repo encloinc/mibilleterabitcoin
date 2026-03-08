@@ -1,5 +1,5 @@
 {
-  "name": "europa-monorepo",
+  "name": "mibilleterabitcoin-monorepo",
   "packageManager": "npm@11.3.0",
   "private": true,
   "workspaces": [
@@ -7,9 +7,9 @@
     "crates/*"
   ],
   "scripts": {
-    "build:wasm": "npm run build:wasm --workspace europa-common",
-    "dev": "npm run dev:europa",
-    "dev:europa": "npm run build:wasm && turbo run dev --filter=europa"
+    "build:wasm": "npm run build:wasm --workspace mibilleterabitcoin-common",
+    "dev": "npm run dev:mibilleterabitcoin",
+    "dev:mibilleterabitcoin": "npm run build:wasm && turbo run dev --filter=mibilleterabitcoin"
   },
   "devDependencies": {
     "turbo": "^2.5.6"

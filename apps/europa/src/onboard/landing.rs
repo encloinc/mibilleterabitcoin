@@ -8,7 +8,7 @@ pub fn render() -> Markup {
             div class="landing-content" {
                 div class="landing-hero" {
                     img class="landing-hola" src="/assets/svgs/hola.svg" alt="hola!";
-                    p class="landing-subtitle" { "Bienvenido a Europa" }
+                    p class="landing-subtitle" { "¿Listo para sentir la libertad financiera?" }
                 }
 
                 div class="landing-actions" {
@@ -20,13 +20,13 @@ pub fn render() -> Markup {
                         false,
                         html! {
                             img class="menu-button-icon" src="/assets/svgs/plus-wallet.svg" alt="";
-                            span { "Crear Wallet" }
+                            span { "Crear Billetera" }
                         },
                     ))
 
                     div class="menu-divider" {
                         span class="menu-divider-line" {}
-                        span class="menu-divider-copy" { "O ya tienes una wallet?" }
+                        span class="menu-divider-copy" { "O ya tienes una billetera?" }
                         span class="menu-divider-line" {}
                     }
 
@@ -38,7 +38,7 @@ pub fn render() -> Markup {
                         false,
                         html! {
                             img class="menu-button-icon" src="/assets/svgs/up-wallet.svg" alt="";
-                            span { "Importar Wallet" }
+                            span { "Importar Billetera" }
                         },
                     ))
                 }
@@ -46,11 +46,25 @@ pub fn render() -> Markup {
 
             details class="landing-footer-wrap" {
                 summary class="landing-footer" {
-                    span { "Que es Europa?" }
+                    span class="landing-footer-label" {
+                        span { "¿Qué es" }
+                        span class="landing-footer-bitcoin" {
+                            img class="landing-footer-icon" src="/assets/svgs/bitcoin.svg" alt="";
+                            span { "Bitcoin?" }
+                        }
+                    }
                     img class="landing-footer-caret" src="/assets/svgs/caret.svg" alt="";
                 }
                 p class="landing-about" {
-                    "Europa es un sistema de ECASH para Bitcoin con settlements en L1, creado por mork1e en X para el hackathon educativo de Aureo. Permite transacciones instantaneas entre usuarios."
+                    "Bitcoin es un sistema de dinero digital descentralizado que permite enviar y recibir dinero por internet sin intermediarios."
+                }
+                a
+                    class="menu-button landing-video-button"
+                    href="https://www.youtube.com/watch?v=rpvBYASClQA"
+                    target="_blank"
+                    rel="noreferrer noopener" {
+                    img class="menu-button-icon" src="/assets/svgs/youtube.svg" alt="";
+                    span { "Ver video explicativo" }
                 }
             }
         }

@@ -1,5 +1,5 @@
 {
-  "name": "europa-common",
+  "name": "mibilleterabitcoin-common",
   "private": true,
   "scripts": {
     "build:wasm": "wasm-pack build --target web --out-dir ../../apps/europa/src/web/assets/pkg --release"

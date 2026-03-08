@@ -1,4 +1,4 @@
-import init, { createWallet, importWallet, init as initWallet } from "/assets/pkg/europa_common.js";
+import init, { createWallet, importWallet, init as initWallet, isMnemonicWord } from "/assets/pkg/mibilleterabitcoin_common.js";
 
 const STORAGE_VERSION = 1;
 const KDF_ITERATIONS = 250000;
@@ -35,6 +35,7 @@ const state = {
   pendingWallet: null,
   pendingPassword: "",
   pendingImportMnemonic: "",
+  importAutoAdvanceFurthestIndex: -1,
   activeWallet: null,
   verificationIndices: [],
   walletReady: false,
@@ -68,6 +69,7 @@ const passwordStrengthIndicators = [...document.querySelectorAll("[data-password
 const routeLinks = [...document.querySelectorAll("[data-route-link]")];
 const submitLinks = [...document.querySelectorAll("[data-submit-form]")];
 const scrollFadeTargets = [...document.querySelectorAll("[data-scroll-fade-target]")];
+const dragScrollAreas = [...document.querySelectorAll("[data-drag-scroll-area]")];
 
 bindEventHandlers();
 boot();
@@ -100,6 +102,12 @@ function bindEventHandlers() {
   scrollFadeTargets.forEach((target) => {
     bindScrollFade(target);
   });
+
+  dragScrollAreas.forEach((area) => {
+    bindDragScroll(area);
+  });
+
+  bindImportWordAutoAdvance();
 
   document.querySelectorAll("[data-back]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -247,7 +255,7 @@ function bindEventHandlers() {
       resetPasswordVisibility(unlockForm);
       navigateTo(ROUTES.wallet);
     } catch (error) {
-      setFlash("No se pudo descifrar la wallet. Verifica la contraseña y la red.");
+      setFlash("No se pudo descifrar la billetera. Verifica la contraseña y la red.");
     }
   });
 
@@ -282,7 +290,7 @@ async function boot() {
     initWallet();
     state.walletReady = true;
   } catch (error) {
-    setFlash("No se pudo cargar el motor de wallets en el navegador.");
+    setFlash("No se pudo cargar el motor de billeteras en el navegador.");
   }
 
   syncFormButtonStates();
@@ -458,7 +466,7 @@ function normalizeHash(hash, defaultHash, hashToScreen) {
 
 function ensureWalletReady() {
   if (!state.walletReady) {
-    setFlash("El motor de wallets aun se esta cargando.");
+    setFlash("El motor de billeteras aun se esta cargando.");
     return false;
   }
 
@@ -563,12 +571,12 @@ function loadEncryptedWallet() {
   try {
     const payload = JSON.parse(raw);
     if (payload.version !== STORAGE_VERSION) {
-      throw new Error("Version de wallet no soportada");
+      throw new Error("Version de billetera no soportada");
     }
     return payload;
   } catch (error) {
     localStorage.removeItem(STORAGE_KEY);
-    setFlash("Los datos almacenados de la wallet eran invalidos y se borraron.");
+    setFlash("Los datos almacenados de la billetera eran invalidos y se borraron.");
     return null;
   }
 }
@@ -690,6 +698,7 @@ function clearCreateState() {
 
 function clearImportForm() {
   state.pendingImportMnemonic = "";
+  state.importAutoAdvanceFurthestIndex = -1;
   importPhraseForm?.reset();
   importPasswordForm?.reset();
   resetPasswordVisibility(importPasswordForm);
@@ -801,6 +810,143 @@ function bindScrollFade(target) {
 function syncScrollFadeTargets() {
   scrollFadeTargets.forEach((target) => {
     target.__syncScrollFade?.();
+  });
+}
+
+function bindDragScroll(area) {
+  const target = area.closest("[data-scroll-fade-target]");
+  if (!target) {
+    return;
+  }
+
+  const hasItems = area.querySelector(".wallet-transaction-card") !== null;
+  area.dataset.dragEnabled = String(hasItems);
+  if (!hasItems) {
+    return;
+  }
+
+  const stopMomentum = () => {
+    if (target.__dragMomentumFrame) {
+      window.cancelAnimationFrame(target.__dragMomentumFrame);
+      target.__dragMomentumFrame = null;
+    }
+  };
+
+  const startMomentum = (initialVelocity) => {
+    stopMomentum();
+
+    let velocity = initialVelocity;
+
+    const tick = () => {
+      if (Math.abs(velocity) < 0.1) {
+        target.__dragMomentumFrame = null;
+        return;
+      }
+
+      const previousScrollTop = target.scrollTop;
+      target.scrollTop -= velocity;
+
+      if (target.scrollTop === previousScrollTop) {
+        target.__dragMomentumFrame = null;
+        return;
+      }
+
+      velocity *= 0.95;
+      target.__dragMomentumFrame = window.requestAnimationFrame(tick);
+    };
+
+    target.__dragMomentumFrame = window.requestAnimationFrame(tick);
+  };
+
+  area.addEventListener("mousedown", (event) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    if (event.target.closest("button, a, input, textarea, select, label, summary")) {
+      return;
+    }
+
+    const maxScrollTop = target.scrollHeight - target.clientHeight;
+    if (maxScrollTop <= 1) {
+      return;
+    }
+
+    stopMomentum();
+
+    const startY = event.clientY;
+    const startScrollTop = target.scrollTop;
+    let lastY = startY;
+    let lastTime = performance.now();
+    let velocity = 0;
+
+    area.classList.add("dragging");
+
+    const onMouseMove = (moveEvent) => {
+      const deltaY = moveEvent.clientY - startY;
+      const now = performance.now();
+      const elapsed = Math.max(now - lastTime, 1);
+      velocity = (moveEvent.clientY - lastY) / elapsed * 16;
+      lastY = moveEvent.clientY;
+      lastTime = now;
+      target.scrollTop = startScrollTop - deltaY;
+      moveEvent.preventDefault();
+    };
+
+    const stopDragging = () => {
+      area.classList.remove("dragging");
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", stopDragging);
+
+      if (Math.abs(velocity) > 0.5) {
+        startMomentum(velocity);
+      }
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", stopDragging, { once: true });
+  });
+}
+
+function bindImportWordAutoAdvance() {
+  importInputs.forEach((input, index) => {
+    const nextInput = importInputs[index + 1];
+
+    const clearPendingAdvance = () => {
+      if (input.__autoAdvanceTimeout) {
+        window.clearTimeout(input.__autoAdvanceTimeout);
+        input.__autoAdvanceTimeout = null;
+      }
+    };
+
+    input.addEventListener("focus", () => {
+      state.importAutoAdvanceFurthestIndex = Math.max(state.importAutoAdvanceFurthestIndex, index);
+    });
+
+    input.addEventListener("input", () => {
+      clearPendingAdvance();
+
+      const value = input.value.trim().toLowerCase();
+      if (
+        !nextInput ||
+        nextInput.value.trim().length > 0 ||
+        state.importAutoAdvanceFurthestIndex !== index ||
+        !isMnemonicWord(value)
+      ) {
+        return;
+      }
+
+      input.__autoAdvanceTimeout = window.setTimeout(() => {
+        if (document.activeElement !== input) {
+          return;
+        }
+
+        nextInput.focus();
+        nextInput.select();
+      }, 400);
+    });
+
+    input.addEventListener("blur", clearPendingAdvance);
   });
 }
 

@@ -47,7 +47,7 @@ pub fn render() -> Markup {
                         None,
                         Some("verify-form"),
                         true,
-                        html! { "Crear Wallet" },
+                        html! { "Crear Billetera" },
                     ))
                 }
             }

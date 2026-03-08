@@ -48,7 +48,13 @@ body::before {
   inset: 0;
   pointer-events: none;
   background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02), transparent 18%, transparent 82%, rgba(255, 255, 255, 0.02)),
+    linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.02),
+      transparent 18%,
+      transparent 82%,
+      rgba(255, 255, 255, 0.02)
+    ),
     radial-gradient(circle at center, transparent 35%, rgba(0, 0, 0, 0.22) 100%);
 }
 
@@ -90,7 +96,7 @@ a {
 }
 
 .brand-lockup {
-  width: 156px;
+  width: 232px;
   height: auto;
 }
 
@@ -123,7 +129,11 @@ a {
   position: absolute;
   inset: 0 0 auto;
   height: 170px;
-  background: linear-gradient(180deg, var(--top-glow-start) 0%, var(--top-glow-end) 100%);
+  background: linear-gradient(
+    180deg,
+    var(--top-glow-start) 0%,
+    var(--top-glow-end) 100%
+  );
   pointer-events: none;
 }
 
@@ -199,7 +209,10 @@ a {
   font-weight: 600;
   text-decoration: none;
   cursor: pointer;
-  transition: background 160ms ease, transform 160ms ease, border-color 160ms ease;
+  transition:
+    background 160ms ease,
+    transform 160ms ease,
+    border-color 160ms ease;
 }
 
 .menu-button:hover {
@@ -239,6 +252,7 @@ a {
 .landing-footer-wrap {
   display: grid;
   gap: 10px;
+  margin-top: 40px;
   padding-top: 6px;
 }
 
@@ -255,6 +269,25 @@ a {
   min-height: 0;
   cursor: pointer;
   list-style: none;
+}
+
+.landing-footer-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+}
+
+.landing-footer-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.landing-footer-bitcoin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .landing-footer::-webkit-details-marker {
@@ -274,9 +307,17 @@ a {
 .landing-about {
   margin: 0;
   text-align: center;
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   line-height: 1.45;
-  color: #858c9d;
+  color: #abb0bb;
+}
+
+.landing-video-button {
+  margin-top: 20px;
+}
+
+.landing-video-button .menu-button-icon {
+  transform: none;
 }
 
 .screen-copy {
@@ -373,6 +414,14 @@ a {
   color: var(--muted);
 }
 
+.backup-warning {
+  margin: 20px 0 0;
+  max-width: 31ch;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--secondary);
+}
+
 .muted {
   color: var(--muted);
   line-height: 1.55;
@@ -405,7 +454,10 @@ input {
   background: rgba(61, 65, 75, 0.88);
   padding: 14px 15px;
   color: var(--secondary);
-  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
 }
 
 input::placeholder {
@@ -460,7 +512,9 @@ input:focus {
   border-radius: var(--radius);
   background: rgba(61, 65, 75, 0.96);
   overflow: hidden;
-  transition: box-shadow 160ms ease, transform 160ms ease;
+  transition:
+    box-shadow 160ms ease,
+    transform 160ms ease;
 }
 
 .input-shell:focus-within {
@@ -601,7 +655,11 @@ button {
   padding: 14px 18px;
   cursor: pointer;
   font-weight: 700;
-  transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease, border-color 180ms ease;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease,
+    border-color 180ms ease;
 }
 
 button:hover {
@@ -650,7 +708,10 @@ a:focus-visible {
   font-size: var(--text-md);
   font-weight: 700;
   text-decoration: none;
-  transition: background 160ms ease, transform 160ms ease, border-color 160ms ease;
+  transition:
+    background 160ms ease,
+    transform 160ms ease,
+    border-color 160ms ease;
 }
 
 .screen-submit:hover:not([aria-disabled="true"]) {
@@ -791,7 +852,11 @@ code {
   height: 72px;
   flex: 0 0 auto;
   pointer-events: none;
-  background: linear-gradient(180deg, rgba(41, 43, 50, 0) 0%, var(--foreground) 100%);
+  background: linear-gradient(
+    180deg,
+    rgba(41, 43, 50, 0) 0%,
+    var(--foreground) 100%
+  );
   transition: opacity 160ms ease;
   z-index: 2;
   display: flex;
@@ -966,7 +1031,9 @@ code {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background 160ms ease, transform 160ms ease;
+  transition:
+    background 160ms ease,
+    transform 160ms ease;
 }
 
 .wallet-action-tile:hover .wallet-action-icon-shell,
@@ -989,8 +1056,8 @@ code {
 }
 
 .wallet-action-icon-qr {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
 }
 
 .wallet-action-label {
@@ -1002,6 +1069,15 @@ code {
 .wallet-transactions-section {
   display: grid;
   gap: 14px;
+}
+
+.wallet-transactions-section[data-drag-enabled="true"]:hover {
+  cursor: grab;
+}
+
+.wallet-transactions-section.dragging {
+  cursor: grabbing;
+  user-select: none;
 }
 
 .wallet-section-title {

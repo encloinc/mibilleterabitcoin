@@ -43,7 +43,9 @@ pub fn flow_header(
 
             div class="screen-copy flow-copy" {
                 h2 class="screen-title flow-title" { (title) }
-                p class="flow-description" { (description) }
+                @if !description.is_empty() {
+                    p class="flow-description" { (description) }
+                }
             }
         }
     }

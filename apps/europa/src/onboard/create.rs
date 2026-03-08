@@ -10,8 +10,8 @@ pub fn render() -> Markup {
             (flow_header(
                 Some("landing-screen"),
                 Some((1, 3)),
-                "Configura tu Wallet",
-                "Define una contraseña segura para cifrar tu wallet en este navegador.",
+                "Configura tu Billetera",
+                "Define una contraseña segura para cifrar tu billetera en este navegador.",
             ))
 
             form id="create-form" class="stack flow-form" autocomplete="off" {

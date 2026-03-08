@@ -80,6 +80,12 @@ pub fn import_wallet(mnemonic: &str, network: &str) -> Result<JsValue, JsValue> 
         .map_err(js_error)
 }
 
+#[wasm_bindgen(js_name = isMnemonicWord)]
+pub fn is_mnemonic_word(word: &str) -> bool {
+    let normalized = word.trim().to_lowercase();
+    !normalized.is_empty() && Language::English.find_word(&normalized).is_some()
+}
+
 fn create_wallet_inner(network: &str) -> Result<WalletPreview> {
     let network = ClientNetwork::from_str(network)?;
     let mnemonic = Mnemonic::generate_in(Language::English, 12)?;

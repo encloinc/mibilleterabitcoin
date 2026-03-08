@@ -10,8 +10,8 @@ pub fn render() -> Markup {
             (flow_header(
                 Some("landing-screen"),
                 Some((1, 2)),
-                "Importar Wallet",
-                "Ingresa las 12 palabras de tu frase para validar tu wallet antes de continuar.",
+                "Importar Billetera",
+                "Ingresa las 12 palabras de tu frase para validar tu billetera antes de continuar.",
             ))
 
             form id="import-phrase-form" class="stack flow-form" autocomplete="off" {
@@ -53,8 +53,8 @@ pub fn render() -> Markup {
             (flow_header(
                 Some("import-phrase-screen"),
                 Some((2, 2)),
-                "Protege tu Wallet",
-                "Define una contraseña para cifrar la wallet importada en este navegador.",
+                "Protege tu Billetera",
+                "Define una contraseña para cifrar la billetera importada en este navegador.",
             ))
 
             form id="import-password-form" class="stack flow-form" autocomplete="off" {
@@ -102,7 +102,7 @@ pub fn render() -> Markup {
                         None,
                         Some("import-password-form"),
                         true,
-                        html! { "Importar Wallet" },
+                        html! { "Importar Billetera" },
                     ))
                 }
             }

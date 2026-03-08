@@ -6,8 +6,8 @@ pub fn render() -> Markup {
     html! {
         section id="unlock-screen" class="screen card card-compact flow-card hidden" {
             div class="screen-copy flow-copy" {
-                h2 class="screen-title flow-title" { "Desbloquear Wallet" }
-                p class="flow-description" { "Descifra la wallet almacenada en este navegador." }
+                h2 class="screen-title flow-title" { "Desbloquear Billetera" }
+                p class="flow-description" { "Descifra la billetera almacenada en este navegador." }
             }
             form id="unlock-form" class="stack flow-form" autocomplete="off" {
                 (input_field(
@@ -35,7 +35,7 @@ pub fn render() -> Markup {
                         true,
                         html! { "Desbloquear" },
                     ))
-                    button type="button" class="ghost" id="forget-wallet-unlock" { "Olvidar wallet guardada" }
+                    button type="button" class="ghost" id="forget-wallet-unlock" { "Olvidar billetera guardada" }
                 }
             }
         }

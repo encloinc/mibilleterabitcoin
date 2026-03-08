@@ -1,4 +1,4 @@
 [workspace]
-members = ["apps/europa", "crates/europa-common"]
+members = ["apps/europa", "crates/mibilleterabitcoin-common"]
 default-members = ["apps/europa"]
 resolver = "2"

@@ -35,7 +35,7 @@ async fn main() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(&bind_address).await?;
 
     println!(
-        "europa wallet listening on http://{} [{}]",
+        "mibilleterabitcoin billetera listening on http://{} [{}]",
         bind_address,
         config.network.as_str()
     );
@@ -59,7 +59,7 @@ fn render_app(config: &AppConfig) -> Markup {
             head {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
-                title { "Europa Wallet" }
+                title { "mibilleterabitcoin Billetera" }
                 link rel="stylesheet" href="/assets/styles.css";
             }
             body {
@@ -67,8 +67,8 @@ fn render_app(config: &AppConfig) -> Markup {
                     header class="app-brand" {
                         img
                             class="brand-lockup"
-                            src="/assets/svgs/europa-logotype.svg"
-                            alt="Europa";
+                            src="/assets/svgs/mibilleterabitcoin-logotype.svg"
+                            alt="mibilleterabitcoin";
                     }
                     p id="flash" class="flash hidden" role="status" aria-live="polite" {}
 
