@@ -135,7 +135,7 @@ fn render_app(config: &AppConfig, btc_to_mxn_rate: Option<f64>) -> Markup {
                 link rel="stylesheet" href="/assets/styles.css";
             }
             body {
-                main class="app-shell" {
+                main class="app-shell app-loading" {
                     header class="app-brand" {
                         img
                             class="brand-lockup"
@@ -145,6 +145,9 @@ fn render_app(config: &AppConfig, btc_to_mxn_rate: Option<f64>) -> Markup {
                     p id="flash" class="flash hidden" role="status" aria-live="polite" {}
 
                     div class="screen-stage" {
+                        div class="app-loader" aria-hidden="true" {
+                            img class="app-loader-icon" src="/assets/svgs/loader-circle-grey.svg" alt="";
+                        }
                         (onboard::landing::render())
                         (onboard::create::render())
                         (onboard::backup::render())

@@ -103,7 +103,7 @@ pub fn render(required_confirmations: u32, network: BitcoinNetwork) -> Markup {
                 div class="actions wallet-send-actions" {
                     button type="submit" class="screen-submit wallet-send-submit" id="wallet-send-submit" disabled {
                         span { "Enviar" }
-                        img class="wallet-send-submit-icon" src="/assets/svgs/plane.svg" alt="";
+                        img class="wallet-send-submit-icon" src="/assets/svgs/plane-dark.svg" alt="";
                     }
                 }
             }

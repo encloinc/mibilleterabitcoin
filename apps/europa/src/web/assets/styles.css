@@ -99,6 +99,70 @@ a {
   justify-content: center;
 }
 
+.app-loader {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: min(100%, 360px);
+  height: 100%;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.app-loader::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
+    var(--foreground);
+}
+
+.app-loader::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 170px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: linear-gradient(
+    180deg,
+    var(--top-glow-start) 0%,
+    var(--top-glow-end) 100%
+  );
+}
+
+.app-loader-icon {
+  width: 28px;
+  height: 28px;
+  animation: app-loader-spin 900ms linear infinite;
+  position: relative;
+  z-index: 1;
+}
+
+.app-shell.app-loading .app-loader {
+  display: flex;
+}
+
+.app-shell.app-loading .screen-stage > .screen,
+.app-shell.app-loading .network-note {
+  visibility: hidden;
+}
+
+@keyframes app-loader-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .app-brand {
   margin-bottom: 20px;
 }
@@ -111,6 +175,7 @@ a {
 .screen-stage {
   position: relative;
   width: 100%;
+  min-height: 452px;
   display: flex;
   justify-content: center;
   overflow-x: hidden;

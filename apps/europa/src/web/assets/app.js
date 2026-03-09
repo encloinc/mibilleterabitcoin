@@ -716,6 +716,7 @@ async function boot() {
 
   syncFormButtonStates();
   syncRoute({ direction: "neutral", immediate: true });
+  runInitialAppReveal();
 }
 
 function syncRoute(options = {}) {
@@ -1242,6 +1243,62 @@ function animateCardTransition(currentScreen, nextScreen, activeScreenId, direct
     }
 
     animationOptions.onComplete();
+  });
+}
+
+function runInitialAppReveal() {
+  const appShell = document.querySelector(".app-shell");
+  const loader = document.querySelector(".app-loader");
+  const nextScreen = navigationState.activeScreenId
+    ? document.getElementById(navigationState.activeScreenId)
+    : getVisibleScreen();
+
+  if (!appShell || !appShell.classList.contains("app-loading") || !loader || !nextScreen) {
+    appShell?.classList.remove("app-loading");
+    return;
+  }
+
+  if (prefersReducedMotion || !supportsNativeCardTransitions) {
+    appShell.classList.remove("app-loading");
+    nextScreen.style.visibility = "";
+    nextScreen.style.opacity = "";
+    nextScreen.style.transform = "";
+    return;
+  }
+
+  nextScreen.style.visibility = "visible";
+  nextScreen.style.opacity = "0";
+  nextScreen.style.transform = `translateY(${CARD_TRANSITION_NEUTRAL_Y}px) scale(0.992)`;
+
+  const nativeAnimationOptions = {
+    duration: CARD_TRANSITION_DURATION,
+    easing: CARD_TRANSITION_EASING,
+    fill: "forwards",
+  };
+
+  const animations = [
+    loader.animate([{ opacity: 1 }, { opacity: 0 }], nativeAnimationOptions),
+    nextScreen.animate(
+      [
+        {
+          opacity: 0,
+          transform: `translateY(${CARD_TRANSITION_NEUTRAL_Y}px) scale(0.992)`,
+        },
+        {
+          opacity: 1,
+          transform: "translateY(0) scale(1)",
+        },
+      ],
+      nativeAnimationOptions,
+    ),
+  ];
+
+  Promise.allSettled(animations.map((animation) => animation.finished)).then(() => {
+    appShell.classList.remove("app-loading");
+    loader.style.opacity = "";
+    nextScreen.style.visibility = "";
+    nextScreen.style.opacity = "";
+    nextScreen.style.transform = "";
   });
 }
 
