@@ -1,7 +1,6 @@
 
 <img width="1509" height="440" alt="logogit" src="https://github.com/user-attachments/assets/3b872cf6-1de9-4a30-83db-234ac4ee1105" />
 
----
 
 # Mi Billetera Bitcoin
 
@@ -10,7 +9,6 @@ Sitio web: [https://mibilleterabitcoin.com](https://mibilleterabitcoin.com)
 
 Una billetera que cualquier mexicano con un navegador puede usar para empezar a ahorrar bitcoin de forma **autocustodia**.
 
----
 
 ## Stack
 
@@ -18,7 +16,6 @@ Este repositorio es un **monorepo manejado por Turborepo** con dos *crates*:
 
 * **`mibilleterabitcoin-common`**: contiene los *wasm bindgens* que utiliza el cliente presentado al usuario (el cual es renderizado en SSR por **MAUD**).
 
----
 
 ## Estructura
 
@@ -29,7 +26,6 @@ El servidor **solo sirve la página SSR y los recursos estáticos**.
 
 La generación del mnemónico, validación de la frase de recuperación, derivación HD y almacenamiento local cifrado ocurren **directamente en el navegador** a través del paquete WASM `mibilleterabitcoin-common`, generado dentro de `apps/europa/src/web/assets/pkg`.
 
----
 
 ## Ejecutar
 
@@ -38,7 +34,6 @@ npm install
 npm run dev
 ```
 
----
 
 ## Configuración
 
@@ -68,7 +63,6 @@ Pasa un archivo JSON mediante `--config`:
   "btc_mxn_endpoint": "https://api.coinbase.com/v2/prices/BTC-MXN/spot"
 }
 
-```
 
 Los valores soportados para `network` son:
 
