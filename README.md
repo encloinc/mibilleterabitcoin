@@ -1,4 +1,5 @@
-Aquí está todo lo que faltaba traducido al español:
+
+<img width="1509" height="440" alt="logogit" src="https://github.com/user-attachments/assets/3b872cf6-1de9-4a30-83db-234ac4ee1105" />
 
 ---
 
