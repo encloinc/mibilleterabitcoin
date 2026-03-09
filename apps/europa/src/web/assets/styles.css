@@ -1727,16 +1727,17 @@ code {
   min-height: 340px;
   border-radius: var(--radius);
   overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .wallet-send-scan-video {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
   background: #111319;
+  opacity: 0;
+  transition: opacity 180ms ease;
 }
 
 .wallet-send-scan-empty {
@@ -1757,8 +1758,8 @@ code {
   height: 36px;
 }
 
-.wallet-send-scan-shell[data-camera-ready="false"] .wallet-send-scan-video {
-  display: none;
+.wallet-send-scan-shell[data-camera-ready="true"] .wallet-send-scan-video {
+  opacity: 1;
 }
 
 .wallet-send-scan-shell[data-camera-ready="true"] .wallet-send-scan-empty {
