@@ -10,11 +10,11 @@ pub fn render() -> Markup {
             data-at-bottom="false"
             data-has-overflow="true" {
             div class="wallet-card-body" {
-                button type="button" class="wallet-account-card" {
+                button type="button" id="wallet-account-card" class="wallet-account-card" aria-label="Ver cuentas" {
                     div class="wallet-account-leading" {
                         img class="wallet-account-icon" src="/assets/svgs/mibilleterabitcoin-icon.svg" alt="";
                         div class="wallet-account-copy" {
-                            p class="wallet-account-title" { "Mi cuenta" }
+                            p id="wallet-account-name" class="wallet-account-title" { "Billetera #0" }
                             p id="wallet-address" class="wallet-account-address" { "tb1qvcw8t...6sm7pudqz" }
                         }
                     }

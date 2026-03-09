@@ -12,8 +12,15 @@ pub fn render() -> Markup {
                 "",
             ))
 
-            p class="backup-warning" {
-                "Sera la unica manera de poder recuperar tu bitcoin en caso de que pierdas acceso a este dispositivo."
+            p class="flow-description" {
+                "Porfavor escribe las siguientes 12 palabras en un papel."
+            }
+
+            div class="backup-warning" {
+                span class="backup-warning-icon" aria-hidden="true" {}
+                p {
+                    "En caso de perder acceso a este dispositivo, esta será la única manera de recuperar tu Bitcoin"
+                }
             }
 
             div id="mnemonic-grid" class="seed-grid" {

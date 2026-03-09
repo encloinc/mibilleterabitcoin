@@ -1,15 +1,26 @@
-import init, { createWallet, importWallet, init as initWallet, isMnemonicWord } from "/assets/pkg/mibilleterabitcoin_common.js";
+import init, {
+  createWallet,
+  deriveWalletAccount,
+  importWallet,
+  init as initWallet,
+  isMnemonicWord,
+} from "/assets/pkg/mibilleterabitcoin_common.js";
 
 const STORAGE_VERSION = 1;
+const ACCOUNT_SETTINGS_VERSION = 1;
 const KDF_ITERATIONS = 250000;
 const STORAGE_KEY = window.APP_CONFIG.storage_key;
+const ACCOUNT_STORAGE_KEY = `${STORAGE_KEY}.accounts`;
 
 const ROUTES = {
   landing: "/",
   createWallet: "/create-wallet",
   importWallet: "/import-wallet",
   unlockWallet: "/unlock-wallet",
+  unlockWalletDelete: "/unlock-wallet/delete",
   wallet: "/wallet",
+  walletAccounts: "/wallet/accounts",
+  walletAccountsCreate: "/wallet/accounts/create",
 };
 
 const CREATE_WALLET_STEPS = {
@@ -37,15 +48,16 @@ const state = {
   pendingImportMnemonic: "",
   importAutoAdvanceFurthestIndex: -1,
   activeWallet: null,
+  accountSettings: null,
   verificationIndices: [],
   walletReady: false,
 };
 
 const CARD_TRANSITION_DURATION = 220;
 const CARD_TRANSITION_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
-const CARD_TRANSITION_DISTANCE = 12;
 const CARD_TRANSITION_NEUTRAL_Y = 10;
 const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+const supportsNativeCardTransitions = typeof Element !== "undefined" && typeof Element.prototype.animate === "function";
 const navigationState = {
   activeScreenId: null,
   historyIndex: 0,
@@ -54,7 +66,6 @@ const navigationState = {
   transitionLayer: null,
   animatedScreen: null,
   transitionAnimation: null,
-  transitionTargets: [],
 };
 
 const ALL_SCREEN_IDS = [
@@ -65,7 +76,11 @@ const ALL_SCREEN_IDS = [
   "import-phrase-screen",
   "import-password-screen",
   "unlock-screen",
+  "unlock-delete-screen",
   "menu-screen",
+  "accounts-screen",
+  "account-create-screen",
+  "account-edit-screen",
 ];
 
 const flash = document.getElementById("flash");
@@ -73,13 +88,27 @@ const mnemonicSlots = [...document.querySelectorAll("[data-word-slot]")];
 const verifyLabels = [...document.querySelectorAll("[data-verify-label]")];
 const verifyInputs = [...document.querySelectorAll("[data-verify-input]")];
 const importInputs = [...document.querySelectorAll("[data-import-word]")];
+const walletAccountCard = document.getElementById("wallet-account-card");
+const walletAccountName = document.getElementById("wallet-account-name");
 const walletAddress = document.getElementById("wallet-address");
 const createForm = document.getElementById("create-form");
 const importPhraseForm = document.getElementById("import-phrase-form");
 const importPasswordForm = document.getElementById("import-password-form");
 const unlockForm = document.getElementById("unlock-form");
 const verifyForm = document.getElementById("verify-form");
-const trackedForms = [createForm, importPhraseForm, importPasswordForm, unlockForm, verifyForm].filter(Boolean);
+const accountCreateForm = document.getElementById("account-create-form");
+const accountEditForm = document.getElementById("account-edit-form");
+const accountCreateNameInput = document.getElementById("account-create-name");
+const accountEditNameInput = document.getElementById("account-edit-name");
+const trackedForms = [
+  createForm,
+  importPhraseForm,
+  importPasswordForm,
+  unlockForm,
+  verifyForm,
+  accountCreateForm,
+  accountEditForm,
+].filter(Boolean);
 const passwordToggles = [...document.querySelectorAll("[data-password-toggle]")];
 const passwordStrengthIndicators = [...document.querySelectorAll("[data-password-strength]")];
 const routeLinks = [...document.querySelectorAll("[data-route-link]")];
@@ -87,13 +116,14 @@ const submitLinks = [...document.querySelectorAll("[data-submit-form]")];
 const scrollFadeTargets = [...document.querySelectorAll("[data-scroll-fade-target]")];
 const dragScrollAreas = [...document.querySelectorAll("[data-drag-scroll-area]")];
 const screenStage = document.querySelector(".screen-stage");
-const animeEngine = window.anime;
+const walletAccountsList = document.getElementById("wallet-accounts-list");
 
 initializeHistoryState();
 bindEventHandlers();
 boot();
 
 function bindEventHandlers() {
+  window.addEventListener("resize", syncFlashWidth);
   window.addEventListener("popstate", handlePopState);
   window.addEventListener("hashchange", () => {
     if (navigationState.suppressNextHashChange) {
@@ -135,6 +165,26 @@ function bindEventHandlers() {
 
   bindImportWordAutoAdvance();
 
+  walletAccountCard?.addEventListener("click", () => {
+    clearFlash();
+    navigateTo(ROUTES.walletAccounts);
+  });
+
+  walletAccountsList?.addEventListener("click", (event) => {
+    const editButton = event.target.closest("[data-account-edit]");
+    if (editButton) {
+      clearFlash();
+      navigateTo(`${ROUTES.walletAccounts}/edit/${editButton.dataset.accountEdit}`);
+      return;
+    }
+
+    const selectButton = event.target.closest("[data-account-select]");
+    if (selectButton) {
+      clearFlash();
+      selectWalletAccount(Number(selectButton.dataset.accountSelect));
+    }
+  });
+
   document.querySelectorAll("[data-back]").forEach((button) => {
     button.addEventListener("click", () => {
       clearFlash();
@@ -159,20 +209,12 @@ function bindEventHandlers() {
 
   const lockWallet = document.getElementById("lock-wallet");
   lockWallet?.addEventListener("click", () => {
-    state.activeWallet = null;
-    if (walletAddress) {
-      walletAddress.textContent = "";
-    }
-
-    if (loadEncryptedWallet()) {
-      navigateTo(ROUTES.unlockWallet);
-    } else {
-      navigateTo(ROUTES.landing);
-    }
+    lockWalletSession();
   });
 
-  document.getElementById("forget-wallet-unlock")?.addEventListener("click", forgetStoredWallet);
+  document.getElementById("confirm-delete-wallet")?.addEventListener("click", forgetStoredWallet);
   document.getElementById("forget-wallet-menu")?.addEventListener("click", forgetStoredWallet);
+  document.getElementById("forget-wallet-accounts")?.addEventListener("click", lockWalletSession);
 
   createForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -247,6 +289,7 @@ function bindEventHandlers() {
     try {
       const wallet = importWallet(state.pendingImportMnemonic, window.APP_CONFIG.network);
       await persistWallet(wallet, password);
+      initializeAccountSettings({ reset: true });
       clearImportForm();
       state.activeWallet = wallet;
       navigateTo(ROUTES.wallet);
@@ -301,12 +344,85 @@ function bindEventHandlers() {
 
     try {
       await persistWallet(state.pendingWallet, state.pendingPassword);
+      initializeAccountSettings({ reset: true });
       state.activeWallet = state.pendingWallet;
       clearCreateState();
       navigateTo(ROUTES.wallet);
     } catch (error) {
       setFlash(error.message || String(error));
     }
+  });
+
+  accountCreateForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    clearFlash();
+
+    if (!ensureWalletReady()) {
+      return;
+    }
+
+    if (!state.activeWallet) {
+      navigateTo(ROUTES.unlockWallet);
+      return;
+    }
+
+    const settings = getAccountSettings();
+    const nextIndex = settings.walletIndex + 1;
+    const accountName = normalizeAccountName(accountCreateNameInput?.value, nextIndex);
+
+    try {
+      deriveWalletAccount(
+        state.activeWallet.mnemonic,
+        state.activeWallet.network || window.APP_CONFIG.network,
+        nextIndex,
+      );
+      saveAccountSettings({
+        ...settings,
+        walletIndex: nextIndex,
+        activeIndex: nextIndex,
+        names: {
+          ...settings.names,
+          [nextIndex]: accountName,
+        },
+      });
+      accountCreateForm.reset();
+      syncFormButtonStates();
+      navigateTo(ROUTES.walletAccounts, "", { direction: "backward" });
+    } catch (error) {
+      setFlash(error.message || String(error));
+    }
+  });
+
+  accountEditForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    clearFlash();
+
+    if (!ensureWalletReady()) {
+      return;
+    }
+
+    if (!state.activeWallet) {
+      navigateTo(ROUTES.unlockWallet);
+      return;
+    }
+
+    const editIndex = getWalletAccountEditIndex();
+    const settings = getAccountSettings();
+    if (editIndex === null || editIndex > settings.walletIndex) {
+      navigateTo(ROUTES.walletAccounts, "", { direction: "backward" });
+      return;
+    }
+
+    saveAccountSettings({
+      ...settings,
+      names: {
+        ...settings.names,
+        [editIndex]: normalizeAccountName(accountEditNameInput?.value, editIndex),
+      },
+    });
+    accountEditForm.reset();
+    syncFormButtonStates();
+    navigateTo(ROUTES.walletAccounts, "", { direction: "backward" });
   });
 }
 
@@ -325,8 +441,9 @@ async function boot() {
 
 function syncRoute(options = {}) {
   const { direction = "neutral", immediate = false } = options;
+  const currentPath = getCurrentPath();
 
-  switch (getCurrentPath()) {
+  switch (currentPath) {
     case ROUTES.landing:
       if (loadEncryptedWallet()) {
         navigateTo(ROUTES.unlockWallet, "", { direction: "neutral", immediate });
@@ -341,16 +458,19 @@ function syncRoute(options = {}) {
       syncImportWalletRoute({ direction, immediate });
       break;
     case ROUTES.unlockWallet:
+    case ROUTES.unlockWalletDelete:
       if (!loadEncryptedWallet()) {
         navigateTo(ROUTES.landing, "", { direction: "neutral", immediate });
         return;
       }
-      showScreen("unlock-screen", { direction, immediate });
-      break;
-    case ROUTES.wallet:
-      syncWalletRoute({ direction, immediate });
+      showScreen(pathToUnlockScreen(currentPath), { direction, immediate });
       break;
     default:
+      if (isWalletRoute(currentPath)) {
+        syncWalletRoute({ direction, immediate, path: currentPath });
+        return;
+      }
+
       navigateTo(ROUTES.landing, "", { direction: "neutral", immediate });
   }
 }
@@ -399,19 +519,51 @@ function syncImportWalletRoute(options = {}) {
 }
 
 function syncWalletRoute(options = {}) {
-  const { direction = "neutral", immediate = false } = options;
+  const { direction = "neutral", immediate = false, path = getCurrentPath() } = options;
   const payload = loadEncryptedWallet();
   if (!payload) {
     navigateTo(ROUTES.landing, "", { direction: "backward", immediate });
     return;
   }
 
-  renderWallet(state.activeWallet || { address: payload.address || "" });
-  showScreen("menu-screen", { direction, immediate });
+  if (!state.activeWallet) {
+    navigateTo(ROUTES.unlockWallet, "", { direction: "backward", immediate });
+    return;
+  }
+
+  initializeAccountSettings();
+
+  if (path === ROUTES.wallet) {
+    renderWallet();
+    showScreen("menu-screen", { direction, immediate });
+    return;
+  }
+
+  if (path === ROUTES.walletAccounts) {
+    renderAccountsList();
+    showScreen("accounts-screen", { direction, immediate });
+    return;
+  }
+
+  if (path === ROUTES.walletAccountsCreate) {
+    prepareAccountCreateForm();
+    showScreen("account-create-screen", { direction, immediate });
+    return;
+  }
+
+  const editIndex = getWalletAccountEditIndex(path);
+  if (editIndex === null || !prepareAccountEditForm(editIndex)) {
+    navigateTo(ROUTES.walletAccounts, "", { direction: "backward", immediate });
+    return;
+  }
+
+  showScreen("account-edit-screen", { direction, immediate });
 }
 
 function handleBackNavigation(currentScreenId, targetScreenId) {
-  if (getCurrentPath() === ROUTES.createWallet) {
+  const currentPath = getCurrentPath();
+
+  if (currentPath === ROUTES.createWallet) {
     if (targetScreenId === "landing-screen") {
       clearCreateState();
       navigateTo(ROUTES.landing, "", { direction: "backward" });
@@ -430,7 +582,7 @@ function handleBackNavigation(currentScreenId, targetScreenId) {
     }
   }
 
-  if (getCurrentPath() === ROUTES.importWallet) {
+  if (currentPath === ROUTES.importWallet) {
     if (targetScreenId === "landing-screen") {
       clearImportForm();
       navigateTo(ROUTES.landing, "", { direction: "backward" });
@@ -441,6 +593,24 @@ function handleBackNavigation(currentScreenId, targetScreenId) {
       updateHash(IMPORT_WALLET_STEPS.defaultHash, { direction: "backward" });
       return;
     }
+  }
+
+  if (currentPath === ROUTES.walletAccounts && targetScreenId === "menu-screen") {
+    navigateTo(ROUTES.wallet, "", { direction: "backward" });
+    return;
+  }
+
+  if (
+    (currentPath === ROUTES.walletAccountsCreate || getWalletAccountEditIndex(currentPath) !== null) &&
+    targetScreenId === "accounts-screen"
+  ) {
+    navigateTo(ROUTES.walletAccounts, "", { direction: "backward" });
+    return;
+  }
+
+  if (currentPath === ROUTES.unlockWalletDelete && targetScreenId === "unlock-screen") {
+    navigateTo(ROUTES.unlockWallet, "", { direction: "backward" });
+    return;
   }
 
   if (currentScreenId === "unlock-screen" && targetScreenId === "landing-screen") {
@@ -462,10 +632,18 @@ function showScreen(activeScreenId, options = {}) {
     ? document.getElementById(navigationState.activeScreenId)
     : getVisibleScreen();
 
-  if (!currentScreen || currentScreen.id === activeScreenId || immediate || prefersReducedMotion || !screenStage || !animeEngine) {
+  if (
+    !currentScreen ||
+    currentScreen.id === activeScreenId ||
+    immediate ||
+    prefersReducedMotion ||
+    !screenStage ||
+    !supportsNativeCardTransitions
+  ) {
     cleanupCardTransition();
     setVisibleScreen(activeScreenId);
     navigationState.activeScreenId = activeScreenId;
+    syncFlashWidth(nextScreen);
     syncScrollFadeTargets();
     return;
   }
@@ -504,6 +682,31 @@ function normalizePath(pathname) {
   }
 
   return pathname.replace(/\/+$/, "");
+}
+
+function isWalletRoute(pathname = getCurrentPath()) {
+  const path = normalizePath(pathname);
+  return (
+    path === ROUTES.wallet ||
+    path === ROUTES.walletAccounts ||
+    path === ROUTES.walletAccountsCreate ||
+    path.startsWith(`${ROUTES.walletAccounts}/edit/`) ||
+    getWalletAccountEditIndex(path) !== null
+  );
+}
+
+function pathToUnlockScreen(pathname = getCurrentPath()) {
+  return normalizePath(pathname) === ROUTES.unlockWalletDelete ? "unlock-delete-screen" : "unlock-screen";
+}
+
+function getWalletAccountEditIndex(pathname = getCurrentPath()) {
+  const match = normalizePath(pathname).match(/^\/wallet\/accounts\/edit\/(\d+)$/);
+  if (!match) {
+    return null;
+  }
+
+  const index = Number(match[1]);
+  return Number.isInteger(index) && index >= 0 ? index : null;
 }
 
 function normalizeHash(hash, defaultHash, hashToScreen, options = {}) {
@@ -559,7 +762,30 @@ function setVisibleScreen(activeScreenId) {
 
     screen.classList.toggle("hidden", screenId !== activeScreenId);
     screen.style.visibility = "";
+
+    if (screenId !== activeScreenId) {
+      collapseScreenDisclosures(screen);
+    }
   });
+
+  syncFlashWidth(document.getElementById(activeScreenId));
+}
+
+function collapseScreenDisclosures(screen) {
+  screen.querySelectorAll("details[open]").forEach((element) => {
+    element.open = false;
+  });
+}
+
+function syncFlashWidth(screen = getVisibleScreen()) {
+  if (!flash || !screen) {
+    return;
+  }
+
+  const width = Math.round(screen.getBoundingClientRect().width);
+  if (width > 0) {
+    flash.style.setProperty("--flash-width", `${width}px`);
+  }
 }
 
 function animateCardTransition(currentScreen, nextScreen, activeScreenId, direction) {
@@ -578,7 +804,6 @@ function animateCardTransition(currentScreen, nextScreen, activeScreenId, direct
   setTransitionLayerFrame(layer, nextRect, stageRect);
   navigationState.transitionLayer = layer;
   navigationState.animatedScreen = currentScreen;
-  navigationState.transitionTargets = [currentScreen, incomingClone, screenStage];
 
   const incoming = getCardTransitionSteps(direction);
   const currentHeight = Math.round(currentRect.height);
@@ -596,52 +821,54 @@ function animateCardTransition(currentScreen, nextScreen, activeScreenId, direct
       setVisibleScreen(activeScreenId);
       cleanupCardTransition();
       navigationState.activeScreenId = activeScreenId;
+      syncFlashWidth(nextScreen);
       syncScrollFadeTargets();
     },
   };
 
   currentScreen.style.pointerEvents = "none";
-  navigationState.transitionAnimation = animeEngine.createTimeline(animationOptions);
-  navigationState.transitionAnimation
-    .add(
-      currentScreen,
-      {
-        opacity: [1, 0],
-        duration: CARD_TRANSITION_DURATION,
-        ease: CARD_TRANSITION_EASING,
-      },
-      0,
-    )
-    .add(
-      incomingClone,
-      {
-        ...incoming,
-        duration: CARD_TRANSITION_DURATION,
-        ease: CARD_TRANSITION_EASING,
-      },
-      0,
-    )
-    .add(
-      screenStage,
-      {
-        height: [`${currentHeight}px`, `${nextHeight}px`],
-        duration: CARD_TRANSITION_DURATION,
-        ease: CARD_TRANSITION_EASING,
-      },
-      0,
-    )
-    .init();
-  navigationState.transitionAnimation.play();
+  const nativeAnimationOptions = {
+    duration: CARD_TRANSITION_DURATION,
+    easing: CARD_TRANSITION_EASING,
+    fill: "forwards",
+  };
+  const animations = [
+    currentScreen.animate([{ opacity: 1 }, { opacity: 0 }], nativeAnimationOptions),
+    incomingClone.animate(
+      [
+        {
+          opacity: 0,
+          transform: `translateY(${CARD_TRANSITION_NEUTRAL_Y}px) scale(0.992)`,
+        },
+        {
+          opacity: 1,
+          transform: "translateY(0) scale(1)",
+        },
+      ],
+      nativeAnimationOptions,
+    ),
+    screenStage.animate(
+      [{ height: `${currentHeight}px` }, { height: `${nextHeight}px` }],
+      nativeAnimationOptions,
+    ),
+  ];
+
+  navigationState.transitionAnimation = { token: transitionToken, animations };
+  Promise.allSettled(animations.map((animation) => animation.finished)).then(() => {
+    if (!navigationState.transitionAnimation || navigationState.transitionAnimation.token !== transitionToken) {
+      return;
+    }
+
+    animationOptions.onComplete();
+  });
 }
 
 function cleanupCardTransition() {
   if (navigationState.transitionAnimation) {
-    navigationState.transitionAnimation.cancel();
+    navigationState.transitionAnimation.animations.forEach((animation) => {
+      animation.cancel();
+    });
     navigationState.transitionAnimation = null;
-  }
-
-  if (animeEngine && navigationState.transitionTargets.length > 0) {
-    animeEngine.remove(navigationState.transitionTargets);
   }
 
   if (navigationState.animatedScreen) {
@@ -655,7 +882,6 @@ function cleanupCardTransition() {
   setGlobalTransitionLock(false);
   navigationState.transitionLayer?.remove();
   navigationState.transitionLayer = null;
-  navigationState.transitionTargets = [];
 }
 
 function createTransitionLayer() {
@@ -819,9 +1045,93 @@ function isVerifyFormCorrect() {
   return state.verificationIndices.every((index, slot) => words[index] === verifyInputs[slot].value.trim().toLowerCase());
 }
 
-function renderWallet(wallet) {
+function renderWallet() {
+  const account = getActiveWalletAccount();
+  if (!account) {
+    clearRenderedWalletAccount();
+    return;
+  }
+
+  if (walletAccountName) {
+    walletAccountName.textContent = account.name;
+  }
+
   if (walletAddress) {
-    walletAddress.textContent = formatWalletAddress(wallet.address || "");
+    walletAddress.textContent = formatWalletAddress(account.address || "");
+  }
+}
+
+function renderAccountsList() {
+  if (!walletAccountsList) {
+    return;
+  }
+
+  const accounts = getWalletAccounts();
+  const activeIndex = getAccountSettings().activeIndex;
+  walletAccountsList.replaceChildren(...accounts.map((account) => createWalletAccountRow(account, activeIndex)));
+}
+
+function createWalletAccountRow(account, activeIndex) {
+  const row = document.createElement("div");
+  row.className = "wallet-account-list-item";
+  row.setAttribute("role", "listitem");
+  row.dataset.active = String(account.index === activeIndex);
+
+  const selectButton = document.createElement("button");
+  selectButton.type = "button";
+  selectButton.className = "wallet-account-list-button";
+  selectButton.dataset.accountSelect = String(account.index);
+  selectButton.setAttribute("aria-pressed", String(account.index === activeIndex));
+
+  const leading = document.createElement("div");
+  leading.className = "wallet-account-list-leading";
+
+  const icon = document.createElement("img");
+  icon.className = "wallet-account-list-icon";
+  icon.src =
+    account.index === activeIndex
+      ? "/assets/svgs/mibilleterabitcoin-icon-clean2.svg"
+      : "/assets/svgs/mibilleterabitcoin-icon-clean.svg";
+  icon.alt = "";
+
+  const copy = document.createElement("div");
+  copy.className = "wallet-account-list-copy";
+
+  const title = document.createElement("p");
+  title.className = "wallet-account-list-title";
+  title.textContent = account.name;
+
+  const address = document.createElement("p");
+  address.className = "wallet-account-list-address";
+  address.textContent = formatWalletAddress(account.address);
+
+  copy.append(title, address);
+  leading.append(icon, copy);
+  selectButton.append(leading);
+
+  const editButton = document.createElement("button");
+  editButton.type = "button";
+  editButton.className = "wallet-account-edit-button";
+  editButton.dataset.accountEdit = String(account.index);
+  editButton.setAttribute("aria-label", `Editar ${account.name}`);
+
+  const editIcon = document.createElement("img");
+  editIcon.className = "wallet-account-edit-icon";
+  editIcon.src = "/assets/svgs/pencil.svg";
+  editIcon.alt = "";
+  editButton.append(editIcon);
+
+  row.append(selectButton, editButton);
+  return row;
+}
+
+function clearRenderedWalletAccount() {
+  if (walletAccountName) {
+    walletAccountName.textContent = "";
+  }
+
+  if (walletAddress) {
+    walletAddress.textContent = "";
   }
 }
 
@@ -835,6 +1145,207 @@ function formatWalletAddress(address) {
   }
 
   return `${address.slice(0, 8)}...${address.slice(-8)}`;
+}
+
+function getWalletAccounts() {
+  if (!state.activeWallet) {
+    return [];
+  }
+
+  const settings = getAccountSettings();
+  const accounts = [];
+
+  for (let index = 0; index <= settings.walletIndex; index += 1) {
+    try {
+      const account = deriveWalletAccount(
+        state.activeWallet.mnemonic,
+        state.activeWallet.network || window.APP_CONFIG.network,
+        index,
+      );
+      accounts.push({
+        ...account,
+        name: getAccountName(index, settings),
+      });
+    } catch (error) {
+      setFlash(error.message || String(error));
+      break;
+    }
+  }
+
+  return accounts;
+}
+
+function getActiveWalletAccount() {
+  if (!state.activeWallet) {
+    return null;
+  }
+
+  const settings = getAccountSettings();
+
+  try {
+    const account = deriveWalletAccount(
+      state.activeWallet.mnemonic,
+      state.activeWallet.network || window.APP_CONFIG.network,
+      settings.activeIndex,
+    );
+    return {
+      ...account,
+      name: getAccountName(account.index, settings),
+    };
+  } catch (error) {
+    setFlash(error.message || String(error));
+    return null;
+  }
+}
+
+function prepareAccountCreateForm() {
+  if (!accountCreateForm || !accountCreateNameInput) {
+    return;
+  }
+
+  const nextIndex = getAccountSettings().walletIndex + 1;
+  accountCreateForm.reset();
+  accountCreateNameInput.value = defaultAccountName(nextIndex);
+  syncFormButtonStates();
+}
+
+function prepareAccountEditForm(index) {
+  const settings = getAccountSettings();
+  if (!accountEditForm || !accountEditNameInput || !Number.isInteger(index) || index < 0 || index > settings.walletIndex) {
+    return false;
+  }
+
+  accountEditForm.reset();
+  accountEditNameInput.value = getAccountName(index, settings);
+  syncFormButtonStates();
+  return true;
+}
+
+function selectWalletAccount(index) {
+  const settings = getAccountSettings();
+  if (!Number.isInteger(index) || index < 0 || index > settings.walletIndex) {
+    return;
+  }
+
+  saveAccountSettings({
+    ...settings,
+    activeIndex: index,
+  });
+  renderWallet();
+  navigateTo(ROUTES.wallet, "", { direction: "backward" });
+}
+
+function initializeAccountSettings(options = {}) {
+  const { reset = false } = options;
+  const settings = reset ? createDefaultAccountSettings() : loadAccountSettings();
+  return saveAccountSettings(settings);
+}
+
+function getAccountSettings() {
+  if (!state.accountSettings) {
+    state.accountSettings = initializeAccountSettings();
+  }
+
+  return state.accountSettings;
+}
+
+function loadAccountSettings() {
+  const raw = localStorage.getItem(ACCOUNT_STORAGE_KEY);
+  if (!raw) {
+    return createDefaultAccountSettings();
+  }
+
+  try {
+    return normalizeAccountSettings(JSON.parse(raw));
+  } catch (_error) {
+    clearAccountSettingsStorage();
+    return createDefaultAccountSettings();
+  }
+}
+
+function saveAccountSettings(settings) {
+  const normalized = normalizeAccountSettings(settings);
+  state.accountSettings = normalized;
+  localStorage.setItem(
+    ACCOUNT_STORAGE_KEY,
+    JSON.stringify({
+      version: normalized.version,
+      wallet_index: normalized.walletIndex,
+      active_index: normalized.activeIndex,
+      names: normalized.names,
+    }),
+  );
+  return normalized;
+}
+
+function clearAccountSettingsStorage() {
+  localStorage.removeItem(ACCOUNT_STORAGE_KEY);
+  state.accountSettings = null;
+}
+
+function createDefaultAccountSettings() {
+  return {
+    version: ACCOUNT_SETTINGS_VERSION,
+    walletIndex: 0,
+    activeIndex: 0,
+    names: {
+      0: defaultAccountName(0),
+    },
+  };
+}
+
+function normalizeAccountSettings(settings) {
+  const walletIndex =
+    Number.isInteger(settings?.walletIndex) && settings.walletIndex >= 0
+      ? settings.walletIndex
+      : Number.isInteger(settings?.wallet_index) && settings.wallet_index >= 0
+        ? settings.wallet_index
+        : 0;
+  const rawActiveIndex =
+    Number.isInteger(settings?.activeIndex) && settings.activeIndex >= 0
+      ? settings.activeIndex
+      : Number.isInteger(settings?.active_index) && settings.active_index >= 0
+        ? settings.active_index
+        : 0;
+  const activeIndex = Math.min(rawActiveIndex, walletIndex);
+  const names = {};
+
+  if (settings?.version === ACCOUNT_SETTINGS_VERSION && settings.names && typeof settings.names === "object") {
+    Object.entries(settings.names).forEach(([rawIndex, rawName]) => {
+      const index = Number(rawIndex);
+      if (!Number.isInteger(index) || index < 0 || index > walletIndex || typeof rawName !== "string") {
+        return;
+      }
+
+      names[index] = normalizeAccountName(rawName, index);
+    });
+  }
+
+  for (let index = 0; index <= walletIndex; index += 1) {
+    if (!names[index]) {
+      names[index] = defaultAccountName(index);
+    }
+  }
+
+  return {
+    version: ACCOUNT_SETTINGS_VERSION,
+    walletIndex,
+    activeIndex,
+    names,
+  };
+}
+
+function getAccountName(index, settings = getAccountSettings()) {
+  return settings.names[index] || defaultAccountName(index);
+}
+
+function normalizeAccountName(value, index) {
+  const normalized = String(value ?? "").trim();
+  return normalized || defaultAccountName(index);
+}
+
+function defaultAccountName(index) {
+  return `Billetera #${index}`;
 }
 
 async function persistWallet(wallet, password) {
@@ -856,6 +1367,8 @@ function loadEncryptedWallet() {
     return payload;
   } catch (error) {
     localStorage.removeItem(STORAGE_KEY);
+    clearAccountSettingsStorage();
+    state.activeWallet = null;
     setFlash("Los datos almacenados de la billetera eran invalidos y se borraron.");
     return null;
   }
@@ -863,13 +1376,25 @@ function loadEncryptedWallet() {
 
 function forgetStoredWallet() {
   localStorage.removeItem(STORAGE_KEY);
+  clearAccountSettingsStorage();
   state.activeWallet = null;
   clearCreateState();
   clearImportForm();
-  if (walletAddress) {
-    walletAddress.textContent = "";
-  }
+  clearRenderedWalletAccount();
   clearFlash();
+  navigateTo(ROUTES.landing);
+}
+
+function lockWalletSession() {
+  state.activeWallet = null;
+  clearRenderedWalletAccount();
+  clearFlash();
+
+  if (loadEncryptedWallet()) {
+    navigateTo(ROUTES.unlockWallet);
+    return;
+  }
+
   navigateTo(ROUTES.landing);
 }
 

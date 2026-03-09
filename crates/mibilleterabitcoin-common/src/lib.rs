@@ -61,6 +61,14 @@ struct WalletPreview {
     derivation_path: String,
 }
 
+#[derive(Debug, Serialize)]
+struct WalletAccountPreview {
+    index: u32,
+    address: String,
+    network: String,
+    derivation_path: String,
+}
+
 #[wasm_bindgen]
 pub fn init() {
     console_error_panic_hook::set_once();
@@ -80,6 +88,17 @@ pub fn import_wallet(mnemonic: &str, network: &str) -> Result<JsValue, JsValue> 
         .map_err(js_error)
 }
 
+#[wasm_bindgen(js_name = deriveWalletAccount)]
+pub fn derive_wallet_account(
+    mnemonic: &str,
+    network: &str,
+    account_index: u32,
+) -> Result<JsValue, JsValue> {
+    derive_wallet_account_inner(mnemonic, network, account_index)
+        .and_then(to_js_value)
+        .map_err(js_error)
+}
+
 #[wasm_bindgen(js_name = isMnemonicWord)]
 pub fn is_mnemonic_word(word: &str) -> bool {
     let normalized = word.trim().to_lowercase();
@@ -89,34 +108,57 @@ pub fn is_mnemonic_word(word: &str) -> bool {
 fn create_wallet_inner(network: &str) -> Result<WalletPreview> {
     let network = ClientNetwork::from_str(network)?;
     let mnemonic = Mnemonic::generate_in(Language::English, 12)?;
-    preview_from_mnemonic(mnemonic, network)
+    preview_from_mnemonic(mnemonic, network, 0)
 }
 
 fn import_wallet_inner(mnemonic: &str, network: &str) -> Result<WalletPreview> {
     let network = ClientNetwork::from_str(network)?;
-    let normalized = normalize_mnemonic(mnemonic);
-
-    if normalized.split_whitespace().count() != 12 {
-        bail!("mnemonic must contain exactly 12 words");
-    }
-
-    let mnemonic = Mnemonic::parse_in(Language::English, &normalized)?;
-    preview_from_mnemonic(mnemonic, network)
+    let mnemonic = parse_mnemonic(mnemonic)?;
+    preview_from_mnemonic(mnemonic, network, 0)
 }
 
-fn preview_from_mnemonic(mnemonic: Mnemonic, network: ClientNetwork) -> Result<WalletPreview> {
-    let derivation_path = standard_derivation_path(network);
-    let address = derive_first_address(&mnemonic, network, &derivation_path)?;
+fn derive_wallet_account_inner(
+    mnemonic: &str,
+    network: &str,
+    account_index: u32,
+) -> Result<WalletAccountPreview> {
+    let network = ClientNetwork::from_str(network)?;
+    let mnemonic = parse_mnemonic(mnemonic)?;
+    account_preview_from_mnemonic(&mnemonic, network, account_index)
+}
+
+fn preview_from_mnemonic(
+    mnemonic: Mnemonic,
+    network: ClientNetwork,
+    account_index: u32,
+) -> Result<WalletPreview> {
+    let account = account_preview_from_mnemonic(&mnemonic, network, account_index)?;
 
     Ok(WalletPreview {
         mnemonic: mnemonic.to_string(),
+        address: account.address,
+        network: account.network,
+        derivation_path: account.derivation_path,
+    })
+}
+
+fn account_preview_from_mnemonic(
+    mnemonic: &Mnemonic,
+    network: ClientNetwork,
+    account_index: u32,
+) -> Result<WalletAccountPreview> {
+    let derivation_path = standard_derivation_path(network, account_index);
+    let address = derive_account_address(mnemonic, network, &derivation_path)?;
+
+    Ok(WalletAccountPreview {
+        index: account_index,
         address,
         network: network.as_str().to_owned(),
         derivation_path,
     })
 }
 
-fn derive_first_address(
+fn derive_account_address(
     mnemonic: &Mnemonic,
     network: ClientNetwork,
     derivation_path: &str,
@@ -135,13 +177,23 @@ fn derive_first_address(
     Ok(address.to_string())
 }
 
-fn standard_derivation_path(network: ClientNetwork) -> String {
+fn standard_derivation_path(network: ClientNetwork, account_index: u32) -> String {
     let coin_type = match network {
         ClientNetwork::Bitcoin => 0,
         ClientNetwork::Testnet | ClientNetwork::Signet | ClientNetwork::Regtest => 1,
     };
 
-    format!("m/84'/{coin_type}'/0'/0/0")
+    format!("m/84'/{coin_type}'/{account_index}'/0/0")
+}
+
+fn parse_mnemonic(phrase: &str) -> Result<Mnemonic> {
+    let normalized = normalize_mnemonic(phrase);
+
+    if normalized.split_whitespace().count() != 12 {
+        bail!("mnemonic must contain exactly 12 words");
+    }
+
+    Mnemonic::parse_in(Language::English, &normalized).map_err(Into::into)
 }
 
 fn normalize_mnemonic(phrase: &str) -> String {
@@ -152,8 +204,8 @@ fn normalize_mnemonic(phrase: &str) -> String {
         .join(" ")
 }
 
-fn to_js_value(wallet: WalletPreview) -> Result<JsValue> {
-    serde_wasm_bindgen::to_value(&wallet).map_err(Into::into)
+fn to_js_value<T: Serialize>(value: T) -> Result<JsValue> {
+    serde_wasm_bindgen::to_value(&value).map_err(Into::into)
 }
 
 fn js_error(error: anyhow::Error) -> JsValue {
@@ -173,8 +225,16 @@ mod tests {
     #[test]
     fn derivation_path_uses_test_coin_type() {
         assert_eq!(
-            standard_derivation_path(ClientNetwork::Signet),
+            standard_derivation_path(ClientNetwork::Signet, 0),
             "m/84'/1'/0'/0/0"
+        );
+    }
+
+    #[test]
+    fn derivation_path_uses_account_index() {
+        assert_eq!(
+            standard_derivation_path(ClientNetwork::Bitcoin, 3),
+            "m/84'/0'/3'/0/0"
         );
     }
 }

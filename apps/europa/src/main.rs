@@ -25,7 +25,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/create-wallet", get(app))
         .route("/import-wallet", get(app))
         .route("/unlock-wallet", get(app))
+        .route("/unlock-wallet/delete", get(app))
         .route("/wallet", get(app))
+        .route("/wallet/accounts", get(app))
+        .route("/wallet/accounts/create", get(app))
+        .route("/wallet/accounts/edit/{idx}", get(app))
         .nest_service("/assets/svgs", ServeDir::new(web_root.join("svgs")))
         .nest_service("/assets", ServeDir::new(web_root.join("assets")))
         .with_state(AppState {
@@ -79,7 +83,11 @@ fn render_app(config: &AppConfig) -> Markup {
                         (onboard::verify::render())
                         (onboard::import::render())
                         (onboard::unlock::render())
+                        (onboard::unlock_delete::render())
                         (wallet::dashboard::render())
+                        (wallet::accounts::render())
+                        (wallet::accounts_create::render())
+                        (wallet::accounts_edit::render())
                     }
 
                     p class="network-note" {
@@ -91,7 +99,6 @@ fn render_app(config: &AppConfig) -> Markup {
                 script {
                     (PreEscaped(format!("window.APP_CONFIG = {};", client_config)))
                 }
-                script src="/assets/scripts/anime.min.js" {}
                 script type="module" src="/assets/app.js" {}
             }
         }
