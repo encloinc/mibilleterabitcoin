@@ -2902,6 +2902,9 @@ function getTransactionTitle(isSending, confirmations) {
 function getTransactionCounterpartyAddress(tx, ownedAddress, isSending) {
   if (isSending) {
     const recipientOutput = getFirstExternalOutput(tx, ownedAddress);
+    if (!recipientOutput) {
+      return "tú";
+    }
     return recipientOutput?.scriptpubkey_address || recipientOutput?.scriptpubkey || "Direccion no disponible";
   }
 
