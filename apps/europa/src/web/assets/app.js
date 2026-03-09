@@ -4,6 +4,8 @@ import init, {
   importWallet,
   init as initWallet,
   isMnemonicWord,
+  prepareSendTx,
+  validateBitcoinAddress,
 } from "/assets/pkg/mibilleterabitcoin_common.js";
 
 window.APP_CONFIG.network = normalizeNetworkName(window.APP_CONFIG.network);
@@ -28,6 +30,9 @@ const ROUTES = {
   unlockWalletDelete: "/unlock-wallet/delete",
   wallet: "/wallet",
   walletReceive: "/wallet/receive",
+  walletSend: "/wallet/send",
+  walletSendSuccess: "/wallet/send/success",
+  walletSendError: "/wallet/send/error",
   walletAccounts: "/wallet/accounts",
   walletAccountsCreate: "/wallet/accounts/create",
 };
@@ -72,6 +77,10 @@ class ElectrsEsploraClass {
     return this.getJson(`${this.buildChainPath({ address, scriptHash })}/utxo`);
   }
 
+  async getFeeEstimates() {
+    return this.getJson("/fee-estimates");
+  }
+
   async getScriptpubkeyChainStats(options = {}) {
     const { address, scriptHash } = options;
     return this.getJson(this.buildChainPath({ address, scriptHash }));
@@ -102,7 +111,8 @@ class ElectrsEsploraClass {
     });
 
     if (!response.ok) {
-      throw new Error(`No se pudo transmitir la transaccion (${response.status}).`);
+      const detail = (await response.text()).trim();
+      throw new Error(detail || `No se pudo transmitir la transaccion (${response.status}).`);
     }
 
     return response.text();
@@ -144,6 +154,7 @@ const state = {
   verificationIndices: [],
   walletReady: false,
   walletChain: createEmptyWalletChainState(),
+  sendFlow: createEmptySendFlowState(),
 };
 
 const CARD_TRANSITION_DURATION = 220;
@@ -176,6 +187,9 @@ const ALL_SCREEN_IDS = [
   "unlock-delete-screen",
   "menu-screen",
   "wallet-receive-screen",
+  "wallet-send-screen",
+  "wallet-send-success-screen",
+  "wallet-send-error-screen",
   "accounts-screen",
   "account-create-screen",
   "account-edit-screen",
@@ -188,6 +202,7 @@ const verifyInputs = [...document.querySelectorAll("[data-verify-input]")];
 const importInputs = [...document.querySelectorAll("[data-import-word]")];
 const walletCardScroll = document.getElementById("wallet-card-scroll");
 const walletAccountCard = document.getElementById("wallet-account-card");
+const walletSendAction = document.getElementById("wallet-send-action");
 const walletReceiveAction = document.getElementById("wallet-receive-action");
 const walletAccountName = document.getElementById("wallet-account-name");
 const walletAddress = document.getElementById("wallet-address");
@@ -198,6 +213,18 @@ const walletTransactionsList = document.getElementById("wallet-transactions-list
 const walletEmptyState = document.getElementById("wallet-empty-state");
 const walletReceiveAddress = document.getElementById("wallet-receive-address");
 const walletReceiveQr = document.getElementById("wallet-receive-qr");
+const walletSendForm = document.getElementById("wallet-send-form");
+const walletSendAddressInput = document.getElementById("wallet-send-address-input");
+const walletSendBtcInput = document.getElementById("wallet-send-btc-input");
+const walletSendMxnInput = document.getElementById("wallet-send-mxn-input");
+const walletSendAvailableBtc = document.getElementById("wallet-send-available-btc");
+const walletSendSubmit = document.getElementById("wallet-send-submit");
+const walletSendFeeOptions = [...document.querySelectorAll("[data-send-fee]")];
+const walletSendSuccessLink = document.getElementById("wallet-send-success-link");
+const walletSendSuccessBack = document.getElementById("wallet-send-success-back");
+const walletSendErrorBack = document.getElementById("wallet-send-error-back");
+const walletSendErrorDetail = document.getElementById("wallet-send-error-detail");
+const walletSendErrorSize = document.getElementById("wallet-send-error-size");
 const createForm = document.getElementById("create-form");
 const importPhraseForm = document.getElementById("import-phrase-form");
 const importPasswordForm = document.getElementById("import-password-form");
@@ -213,6 +240,7 @@ const trackedForms = [
   importPasswordForm,
   unlockForm,
   verifyForm,
+  walletSendForm,
   accountCreateForm,
   accountEditForm,
 ].filter(Boolean);
@@ -273,10 +301,16 @@ function bindEventHandlers() {
   walletCardScroll?.addEventListener("scroll", handleWalletMenuScroll, { passive: true });
 
   bindImportWordAutoAdvance();
+  bindSendForm();
 
   walletAccountCard?.addEventListener("click", () => {
     clearFlash();
     navigateTo(ROUTES.walletAccounts);
+  });
+
+  walletSendAction?.addEventListener("click", () => {
+    clearFlash();
+    navigateTo(ROUTES.walletSend);
   });
 
   walletReceiveAction?.addEventListener("click", () => {
@@ -329,6 +363,20 @@ function bindEventHandlers() {
   document.getElementById("confirm-delete-wallet")?.addEventListener("click", forgetStoredWallet);
   document.getElementById("forget-wallet-menu")?.addEventListener("click", forgetStoredWallet);
   document.getElementById("forget-wallet-accounts")?.addEventListener("click", lockWalletSession);
+  walletSendFeeOptions.forEach((option) => {
+    option.addEventListener("click", () => {
+      selectSendFeeOption(option.dataset.sendFee);
+    });
+  });
+  walletSendSuccessBack?.addEventListener("click", () => {
+    resetSendResultState();
+    invalidateWalletChainState();
+    navigateTo(ROUTES.wallet, "", { direction: "backward" });
+  });
+  walletSendErrorBack?.addEventListener("click", () => {
+    resetSendResultState();
+    navigateTo(ROUTES.walletSend, "", { direction: "backward" });
+  });
 
   createForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -441,6 +489,42 @@ function bindEventHandlers() {
       navigateTo(ROUTES.wallet);
     } catch (error) {
       setFlash("No se pudo descifrar la billetera. Verifica la contraseña y la red.");
+    }
+  });
+
+  walletSendForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clearFlash();
+
+    if (!ensureWalletReady()) {
+      return;
+    }
+
+    const preparedTx = state.sendFlow.preparedTx;
+    if (!preparedTx?.ready) {
+      return;
+    }
+
+    state.sendFlow.submitting = true;
+    syncSendSubmitState();
+
+    try {
+      const txid = await electrsEsplora.postTx(preparedTx.tx_hex);
+      state.sendFlow.result = {
+        status: "success",
+        txid: String(txid).trim() || preparedTx.txid,
+      };
+      navigateTo(ROUTES.walletSendSuccess);
+    } catch (error) {
+      state.sendFlow.result = {
+        status: "error",
+        detail: error.message || String(error),
+        txVbytes: preparedTx.tx_vbytes,
+      };
+      navigateTo(ROUTES.walletSendError);
+    } finally {
+      state.sendFlow.submitting = false;
+      syncSendSubmitState();
     }
   });
 
@@ -663,6 +747,34 @@ function syncWalletRoute(options = {}) {
     return;
   }
 
+  if (path === ROUTES.walletSend) {
+    renderWalletSend();
+    showScreen("wallet-send-screen", { direction, immediate });
+    return;
+  }
+
+  if (path === ROUTES.walletSendSuccess) {
+    if (!state.sendFlow.result || state.sendFlow.result.status !== "success") {
+      navigateTo(ROUTES.walletSend, "", { direction: "backward", immediate });
+      return;
+    }
+
+    renderWalletSendSuccess();
+    showScreen("wallet-send-success-screen", { direction, immediate });
+    return;
+  }
+
+  if (path === ROUTES.walletSendError) {
+    if (!state.sendFlow.result || state.sendFlow.result.status !== "error") {
+      navigateTo(ROUTES.walletSend, "", { direction: "backward", immediate });
+      return;
+    }
+
+    renderWalletSendError();
+    showScreen("wallet-send-error-screen", { direction, immediate });
+    return;
+  }
+
   if (path === ROUTES.walletAccounts) {
     renderAccountsList();
     showScreen("accounts-screen", { direction, immediate });
@@ -726,6 +838,21 @@ function handleBackNavigation(currentScreenId, targetScreenId) {
 
   if (currentPath === ROUTES.walletReceive && targetScreenId === "menu-screen") {
     navigateTo(ROUTES.wallet, "", { direction: "backward" });
+    return;
+  }
+
+  if (currentPath === ROUTES.walletSend && targetScreenId === "menu-screen") {
+    navigateTo(ROUTES.wallet, "", { direction: "backward" });
+    return;
+  }
+
+  if (currentPath === ROUTES.walletSendSuccess && targetScreenId === "wallet-send-screen") {
+    navigateTo(ROUTES.walletSend, "", { direction: "backward" });
+    return;
+  }
+
+  if (currentPath === ROUTES.walletSendError && targetScreenId === "wallet-send-screen") {
+    navigateTo(ROUTES.walletSend, "", { direction: "backward" });
     return;
   }
 
@@ -818,6 +945,9 @@ function isWalletRoute(pathname = getCurrentPath()) {
   return (
     path === ROUTES.wallet ||
     path === ROUTES.walletReceive ||
+    path === ROUTES.walletSend ||
+    path === ROUTES.walletSendSuccess ||
+    path === ROUTES.walletSendError ||
     path === ROUTES.walletAccounts ||
     path === ROUTES.walletAccountsCreate ||
     path.startsWith(`${ROUTES.walletAccounts}/edit/`) ||
@@ -1249,6 +1379,107 @@ function clearWalletReceive() {
   walletReceiveQr?.replaceChildren();
 }
 
+function renderWalletSend() {
+  const account = getActiveWalletAccount();
+  if (!account) {
+    clearWalletSend();
+    return;
+  }
+
+  const spendAddress = account.address;
+  const nextKey = buildWalletChainKey(`send:${spendAddress}`);
+  if (state.sendFlow.key !== nextKey) {
+    walletSendForm?.reset();
+    resetSendFlowState();
+    state.sendFlow.key = nextKey;
+    state.sendFlow.address = spendAddress;
+  }
+
+  renderSendFeeOptions();
+  syncSendAvailableBalance();
+  syncSendSubmitState();
+  void ensureSendFlowData();
+}
+
+function renderWalletSendSuccess() {
+  if (!walletSendSuccessLink) {
+    return;
+  }
+
+  const txid = state.sendFlow.result?.txid || "#";
+  walletSendSuccessLink.href = txid === "#" ? "#" : electrsEsplora.getTxExplorerUrl(txid);
+  const label = walletSendSuccessLink.querySelector("span");
+  if (label) {
+    label.textContent = txid === "#" ? "Ver transacción" : txid;
+  }
+}
+
+function renderWalletSendError() {
+  if (walletSendErrorDetail) {
+    walletSendErrorDetail.textContent =
+      state.sendFlow.result?.detail || "No se pudo generar o transmitir la transacción.";
+  }
+
+  if (walletSendErrorSize) {
+    const txVbytes = Number(state.sendFlow.result?.txVbytes);
+    const hasTxSize = Number.isFinite(txVbytes) && txVbytes > 0;
+    walletSendErrorSize.textContent = hasTxSize ? `Tamaño estimado: ${txVbytes} vB` : "";
+    walletSendErrorSize.classList.toggle("hidden", !hasTxSize);
+  }
+}
+
+function clearWalletSend() {
+  walletSendForm?.reset();
+  resetSendFlowState();
+  renderSendFeeOptions();
+  syncSendAvailableBalance();
+  syncSendSubmitState();
+}
+
+async function ensureSendFlowData() {
+  if (!state.activeWallet || !state.sendFlow.address) {
+    return;
+  }
+
+  if (state.sendFlow.loadedOnce || state.sendFlow.loading) {
+    renderSendFeeOptions();
+    syncSendAvailableBalance();
+    return;
+  }
+
+  state.sendFlow.loading = true;
+  renderSendFeeOptions();
+  syncSendAvailableBalance();
+  syncSendSubmitState();
+
+  try {
+    const [utxos, feeEstimates] = await Promise.all([
+      electrsEsplora.getUtxos({ address: state.sendFlow.address }),
+      electrsEsplora.getFeeEstimates(),
+    ]);
+
+    if (!state.sendFlow.address) {
+      return;
+    }
+
+    state.sendFlow.spendableUtxos = Array.isArray(utxos) ? utxos : [];
+    state.sendFlow.spendableBalanceSats = state.sendFlow.spendableUtxos.reduce(
+      (total, utxo) => total + Number(utxo?.value ?? 0),
+      0,
+    );
+    state.sendFlow.feeRates = resolveSendFeeRates(feeEstimates);
+    state.sendFlow.loadedOnce = true;
+  } catch (error) {
+    state.sendFlow.feeError = error.message || String(error);
+    setFlash("No se pudo cargar la información necesaria para enviar bitcoin.");
+  } finally {
+    state.sendFlow.loading = false;
+    renderSendFeeOptions();
+    syncSendAvailableBalance();
+    await refreshSendPreview();
+  }
+}
+
 async function ensureWalletChainData() {
   const account = getActiveWalletAccount();
   if (!account) {
@@ -1434,7 +1665,7 @@ function createWalletTransactionCard(tx, ownedAddress, tipHeight) {
   const confirmations = getTransactionConfirmations(tx, tipHeight);
   const addressLabel = isSending ? "A:" : "De:";
   const addressValue = formatWalletAddress(getTransactionCounterpartyAddress(tx));
-  const amountValue = formatBtcAmount(tx?.vout?.[0]?.value ?? null);
+  const amountValue = formatBtcAmount(getTransactionWalletAmount(tx, ownedAddress, isSending));
   const statusIcon = getTransactionStatusIcon(isSending, confirmations);
 
   const card = document.createElement("article");
@@ -1496,13 +1727,13 @@ function createWalletTransactionCard(tx, ownedAddress, tipHeight) {
   subtitleValue.className = "wallet-transaction-subtitle-value";
   subtitleValue.textContent = addressValue;
 
-  const amount = document.createElement("p");
+  const amount = document.createElement("span");
   amount.className = "wallet-transaction-amount";
   amount.textContent = amountValue;
 
   header.append(title, explorerLink);
-  subtitle.append(subtitleLabel, subtitleValue);
-  copy.append(header, subtitle, amount);
+  subtitle.append(subtitleLabel, subtitleValue, amount);
+  copy.append(header, subtitle);
   card.append(media, copy);
 
   return card;
@@ -1837,10 +2068,12 @@ function forgetStoredWallet() {
   clearAccountSettingsStorage();
   state.activeWallet = null;
   invalidateWalletChainState();
+  resetSendResultState();
   clearCreateState();
   clearImportForm();
   clearRenderedWalletAccount();
   clearWalletReceive();
+  clearWalletSend();
   clearFlash();
   navigateTo(ROUTES.landing);
 }
@@ -1848,8 +2081,10 @@ function forgetStoredWallet() {
 function lockWalletSession() {
   state.activeWallet = null;
   invalidateWalletChainState();
+  resetSendResultState();
   clearRenderedWalletAccount();
   clearWalletReceive();
+  clearWalletSend();
   clearFlash();
 
   if (loadEncryptedWallet()) {
@@ -1938,10 +2173,44 @@ function createEmptyWalletChainState(requestToken = 0) {
   };
 }
 
+function createEmptySendFlowState() {
+  return {
+    key: "",
+    address: "",
+    feeOption: "medium",
+    feeRates: {
+      slow: 1,
+      medium: 1,
+      fast: 1,
+    },
+    spendableBalanceSats: null,
+    spendableUtxos: [],
+    loadedOnce: false,
+    loading: false,
+    feeError: null,
+    preparing: false,
+    previewToken: 0,
+    preparedTx: null,
+    result: null,
+    submitting: false,
+    syncingAmounts: false,
+    lastAmountEdited: "btc",
+  };
+}
+
 function invalidateWalletChainState() {
   const nextToken = state.walletChain.requestToken + 1;
   state.walletChain = createEmptyWalletChainState(nextToken);
+  resetSendFlowState();
   clearWalletChainView();
+}
+
+function resetSendFlowState() {
+  state.sendFlow = createEmptySendFlowState();
+}
+
+function resetSendResultState() {
+  state.sendFlow.result = null;
 }
 
 function clearWalletChainView() {
@@ -2086,6 +2355,30 @@ function getTransactionTitle(isSending, confirmations) {
 
 function getTransactionCounterpartyAddress(tx) {
   return tx?.vout?.[0]?.scriptpubkey_address || tx?.vout?.[0]?.scriptpubkey || "Direccion no disponible";
+}
+
+function getTransactionWalletAmount(tx, ownedAddress, isSending) {
+  if (!ownedAddress) {
+    return null;
+  }
+
+  if (isSending) {
+    return (tx?.vin ?? []).reduce((total, input) => {
+      if (input?.prevout?.scriptpubkey_address !== ownedAddress) {
+        return total;
+      }
+
+      return total + Number(input?.prevout?.value ?? 0);
+    }, 0);
+  }
+
+  return (tx?.vout ?? []).reduce((total, output) => {
+    if (output?.scriptpubkey_address !== ownedAddress) {
+      return total;
+    }
+
+    return total + Number(output?.value ?? 0);
+  }, 0);
 }
 
 function getTransactionStatusIcon(isSending, confirmations) {
@@ -2414,6 +2707,302 @@ function bindImportWordAutoAdvance() {
 
     input.addEventListener("blur", clearPendingAdvance);
   });
+}
+
+function bindSendForm() {
+  if (!walletSendForm || !walletSendAddressInput || !walletSendBtcInput || !walletSendMxnInput) {
+    return;
+  }
+
+  walletSendAddressInput.addEventListener("input", () => {
+    walletSendAddressInput.value = sanitizeFreeformInput(walletSendAddressInput.value);
+    void refreshSendPreview();
+  });
+
+  walletSendBtcInput.addEventListener("input", () => {
+    if (state.sendFlow.syncingAmounts) {
+      return;
+    }
+
+    walletSendBtcInput.value = sanitizeDecimalInput(walletSendBtcInput.value, 8);
+    state.sendFlow.lastAmountEdited = "btc";
+    syncSendCounterAmount("btc");
+    void refreshSendPreview();
+  });
+
+  walletSendMxnInput.addEventListener("input", () => {
+    if (state.sendFlow.syncingAmounts) {
+      return;
+    }
+
+    walletSendMxnInput.value = sanitizeDecimalInput(walletSendMxnInput.value, 2);
+    state.sendFlow.lastAmountEdited = "mxn";
+    syncSendCounterAmount("mxn");
+    void refreshSendPreview();
+  });
+}
+
+function selectSendFeeOption(feeKey) {
+  if (!feeKey || !state.sendFlow.feeRates[feeKey]) {
+    return;
+  }
+
+  state.sendFlow.feeOption = feeKey;
+  renderSendFeeOptions();
+  void refreshSendPreview();
+}
+
+function renderSendFeeOptions() {
+  walletSendFeeOptions.forEach((option) => {
+    const feeKey = option.dataset.sendFee;
+    const isSelected = feeKey === state.sendFlow.feeOption;
+    option.dataset.selected = String(isSelected);
+    option.setAttribute("aria-checked", String(isSelected));
+
+    const feeBtc = option.querySelector(`[data-send-fee-btc="${feeKey}"]`);
+    const feeMxn = option.querySelector(`[data-send-fee-mxn="${feeKey}"]`);
+    const estimatedFeeSats = estimateDisplayedSendFeeSats(feeKey);
+
+    if (feeBtc) {
+      feeBtc.textContent = estimatedFeeSats === null ? "-- BTC" : formatBtcAmount(estimatedFeeSats);
+    }
+
+    if (feeMxn) {
+      feeMxn.textContent = estimatedFeeSats === null ? "-- MXN" : formatMxnValue(estimatedFeeSats);
+    }
+  });
+}
+
+function syncSendAvailableBalance() {
+  if (!walletSendAvailableBtc) {
+    return;
+  }
+
+  walletSendAvailableBtc.textContent = formatBtcAmount(state.sendFlow.spendableBalanceSats);
+}
+
+async function refreshSendPreview() {
+  if (!walletSendForm || !walletSendAddressInput || !walletSendBtcInput) {
+    return;
+  }
+
+  walletSendAddressInput.setCustomValidity("");
+  walletSendBtcInput.setCustomValidity("");
+  state.sendFlow.preparedTx = null;
+
+  const account = getActiveWalletAccount();
+  if (!account || !state.activeWallet) {
+    syncSendSubmitState();
+    return;
+  }
+
+  const recipientAddress = walletSendAddressInput.value.trim();
+  const amountSats = parseBtcInputToSats(walletSendBtcInput.value);
+  const feeRateSatVb = state.sendFlow.feeRates[state.sendFlow.feeOption];
+
+  if (recipientAddress && !validateBitcoinAddress(recipientAddress, window.APP_CONFIG.network)) {
+    walletSendAddressInput.setCustomValidity("Ingresa una dirección de Bitcoin válida.");
+  }
+
+  if (walletSendBtcInput.value.trim() && amountSats === null) {
+    walletSendBtcInput.setCustomValidity("Ingresa un monto válido.");
+  }
+
+  if (!recipientAddress || amountSats === null || amountSats <= 0 || !Number.isFinite(feeRateSatVb)) {
+    syncSendSubmitState();
+    return;
+  }
+
+  if (state.sendFlow.loading) {
+    syncSendSubmitState();
+    return;
+  }
+
+  const previewToken = state.sendFlow.previewToken + 1;
+  state.sendFlow.previewToken = previewToken;
+  state.sendFlow.preparing = true;
+  syncSendSubmitState();
+
+  try {
+    const preparedTx = prepareSendTx(
+      state.activeWallet.mnemonic,
+      getWalletNetwork(state.activeWallet),
+      getAccountSettings().activeIndex,
+      recipientAddress,
+      amountSats,
+      feeRateSatVb,
+      state.sendFlow.spendableUtxos,
+    );
+
+    if (previewToken !== state.sendFlow.previewToken) {
+      return;
+    }
+
+    state.sendFlow.preparedTx = preparedTx;
+  } catch (error) {
+    if (previewToken !== state.sendFlow.previewToken) {
+      return;
+    }
+
+    walletSendBtcInput.setCustomValidity(error.message || String(error));
+  } finally {
+    if (previewToken !== state.sendFlow.previewToken) {
+      return;
+    }
+
+    state.sendFlow.preparing = false;
+    renderSendFeeOptions();
+    syncSendSubmitState();
+  }
+}
+
+function syncSendCounterAmount(source) {
+  if (source === "btc") {
+    const amountSats = parseBtcInputToSats(walletSendBtcInput.value);
+    withSendAmountSync(() => {
+      walletSendMxnInput.value = amountSats === null ? "" : formatMxnInputValue(amountSats);
+    });
+    return;
+  }
+
+  const amountSats = parseMxnInputToSats(walletSendMxnInput.value);
+  withSendAmountSync(() => {
+    walletSendBtcInput.value = amountSats === null ? "" : formatBtcInputValue(amountSats);
+  });
+}
+
+function withSendAmountSync(callback) {
+  state.sendFlow.syncingAmounts = true;
+  try {
+    callback();
+  } finally {
+    state.sendFlow.syncingAmounts = false;
+  }
+}
+
+function syncSendSubmitState() {
+  if (!walletSendSubmit || !walletSendForm) {
+    return;
+  }
+
+  const isReady =
+    !state.sendFlow.loading &&
+    !state.sendFlow.preparing &&
+    !state.sendFlow.submitting &&
+    walletSendForm.checkValidity() &&
+    Boolean(state.sendFlow.preparedTx?.ready);
+
+  walletSendSubmit.disabled = !isReady;
+  walletSendSubmit.setAttribute("aria-disabled", String(!isReady));
+}
+
+function estimateDisplayedSendFeeSats(feeKey) {
+  const feeRateSatVb = state.sendFlow.feeRates[feeKey];
+  if (!Number.isFinite(feeRateSatVb)) {
+    return null;
+  }
+
+  if (state.sendFlow.preparedTx?.ready) {
+    return Math.max(1, Math.ceil(state.sendFlow.preparedTx.tx_vbytes * feeRateSatVb));
+  }
+
+  return Math.max(1, Math.ceil((10.5 + 68 * 1 + 31 * 2) * feeRateSatVb));
+}
+
+function resolveSendFeeRates(feeEstimates) {
+  const resolve = (targets) => {
+    for (const target of targets) {
+      const value = Number(feeEstimates?.[target]);
+      if (Number.isFinite(value) && value > 0) {
+        return value;
+      }
+    }
+
+    return 1;
+  };
+
+  return {
+    slow: resolve(["6", "8", "10"]),
+    medium: resolve(["3", "2", "4", "1"]),
+    fast: resolve(["1", "2", "3"]),
+  };
+}
+
+function sanitizeFreeformInput(value) {
+  return String(value ?? "").replace(/\s+/g, "");
+}
+
+function sanitizeDecimalInput(value, maxDecimals) {
+  const sanitized = String(value ?? "")
+    .replace(/,/g, ".")
+    .replace(/[^\d.]/g, "");
+  const [whole = "", ...fractionParts] = sanitized.split(".");
+  const fraction = fractionParts.join("").slice(0, maxDecimals);
+  return fractionParts.length > 0 ? `${whole}.${fraction}` : whole;
+}
+
+function parseBtcInputToSats(value) {
+  const normalized = sanitizeDecimalInput(value, 8);
+  if (!normalized) {
+    return null;
+  }
+
+  if (!/^\d+(\.\d{0,8})?$/.test(normalized)) {
+    return null;
+  }
+
+  const [wholePart, fractionPart = ""] = normalized.split(".");
+  const wholeSats = BigInt(wholePart || "0") * 100_000_000n;
+  const fractionalSats = BigInt((fractionPart + "00000000").slice(0, 8));
+  const totalSats = wholeSats + fractionalSats;
+  if (totalSats > BigInt(Number.MAX_SAFE_INTEGER)) {
+    return null;
+  }
+
+  return Number(totalSats);
+}
+
+function parseMxnInputToSats(value) {
+  const normalized = sanitizeDecimalInput(value, 2);
+  if (!normalized || !Number.isFinite(BTC_TO_MXN_RATE) || BTC_TO_MXN_RATE <= 0) {
+    return null;
+  }
+
+  const mxnValue = Number(normalized);
+  if (!Number.isFinite(mxnValue) || mxnValue <= 0) {
+    return null;
+  }
+
+  return Math.round(mxnValue / BTC_TO_MXN_RATE * 100_000_000);
+}
+
+function formatBtcInputValue(amountSats) {
+  if (!Number.isFinite(amountSats)) {
+    return "";
+  }
+
+  return trimTrailingZeros((amountSats / 100_000_000).toFixed(8));
+}
+
+function formatMxnInputValue(amountSats) {
+  if (!Number.isFinite(amountSats) || !Number.isFinite(BTC_TO_MXN_RATE) || BTC_TO_MXN_RATE <= 0) {
+    return "";
+  }
+
+  return trimTrailingZeros((amountSats / 100_000_000 * BTC_TO_MXN_RATE).toFixed(2));
+}
+
+function formatMxnValue(amountSats) {
+  if (!Number.isFinite(amountSats) || !Number.isFinite(BTC_TO_MXN_RATE) || BTC_TO_MXN_RATE <= 0) {
+    return "-- MXN";
+  }
+
+  const mxnValue = amountSats / 100_000_000 * BTC_TO_MXN_RATE;
+  return `${trimTrailingZeros(mxnValue.toFixed(2))} MXN`;
+}
+
+function trimTrailingZeros(value) {
+  return String(value).replace(/(\.\d*?[1-9])0+$/u, "$1").replace(/\.0+$/u, "").replace(/\.$/u, "");
 }
 
 function shouldHandleClientClick(event) {
