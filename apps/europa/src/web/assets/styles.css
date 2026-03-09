@@ -18,6 +18,7 @@
   --text-base: 1rem;
   --text-lg: 1.5rem;
   --text-title: clamp(1.7rem, 2vw, 2rem);
+  --text-input: 16px;
   --muted: rgba(255, 255, 255, 0.7);
   --dimmed: rgba(255, 255, 255, 0.6);
   --line: rgba(255, 255, 255, 0.08);
@@ -730,6 +731,7 @@ input {
   border-radius: var(--radius);
   background: rgba(61, 65, 75, 0.88);
   padding: 14px 15px;
+  font-size: var(--text-input);
   color: var(--secondary);
   transition:
     border-color 160ms ease,
@@ -849,7 +851,7 @@ input:focus {
   padding: 13px 0;
   border-radius: 0;
   background: transparent;
-  font-size: var(--text-sm);
+  font-size: var(--text-input);
 }
 
 .input-control:focus {
