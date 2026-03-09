@@ -4,7 +4,7 @@
 
 # Mi Billetera Bitcoin
 
-VIDEO PITCH: ...
+VIDEO PITCH:  [https://youtu.be/ik95wKY37Bg](https://youtu.be/ik95wKY37Bg)
 
 SITIO WEB: [https://mibilleterabitcoin.com](https://mibilleterabitcoin.com)
 
