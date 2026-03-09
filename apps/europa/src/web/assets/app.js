@@ -1959,7 +1959,8 @@ function renderWalletTransactions() {
     return;
   }
 
-  const items = state.walletChain.txs.map((tx) =>
+  const sortedTxs = prioritizeWalletTransactions(state.walletChain.txs, state.walletChain.address);
+  const items = sortedTxs.map((tx) =>
     createWalletTransactionCard(tx, state.walletChain.address, state.walletChain.tipHeight),
   );
 
@@ -1974,7 +1975,7 @@ function createWalletTransactionCard(tx, ownedAddress, tipHeight) {
   const isSending = isOutgoingTransaction(tx, ownedAddress);
   const confirmations = getTransactionConfirmations(tx, tipHeight);
   const addressLabel = isSending ? "A:" : "De:";
-  const addressValue = formatWalletAddress(getTransactionCounterpartyAddress(tx));
+  const addressValue = formatWalletAddress(getTransactionCounterpartyAddress(tx, ownedAddress, isSending));
   const amountValue = formatBtcAmount(getTransactionWalletAmount(tx, ownedAddress, isSending));
   const statusIcon = getTransactionStatusIcon(isSending, confirmations);
 
@@ -2748,13 +2749,18 @@ function getTransactionConfirmations(tx, tipHeight) {
 
 function getTransactionTitle(isSending, confirmations) {
   if (isSending) {
-    return confirmations >= REQUIRED_CONFIRMATIONS ? "Enviado" : "Enviar";
+    return confirmations >= REQUIRED_CONFIRMATIONS ? "Enviado" : "Enviando";
   }
 
   return confirmations >= REQUIRED_CONFIRMATIONS ? "Recibido" : "Recibiendo";
 }
 
-function getTransactionCounterpartyAddress(tx) {
+function getTransactionCounterpartyAddress(tx, ownedAddress, isSending) {
+  if (isSending) {
+    const recipientOutput = getFirstExternalOutput(tx, ownedAddress);
+    return recipientOutput?.scriptpubkey_address || recipientOutput?.scriptpubkey || "Direccion no disponible";
+  }
+
   return tx?.vout?.[0]?.scriptpubkey_address || tx?.vout?.[0]?.scriptpubkey || "Direccion no disponible";
 }
 
@@ -2764,12 +2770,12 @@ function getTransactionWalletAmount(tx, ownedAddress, isSending) {
   }
 
   if (isSending) {
-    return (tx?.vin ?? []).reduce((total, input) => {
-      if (input?.prevout?.scriptpubkey_address !== ownedAddress) {
+    return (tx?.vout ?? []).reduce((total, output) => {
+      if (output?.scriptpubkey_address === ownedAddress) {
         return total;
       }
 
-      return total + Number(input?.prevout?.value ?? 0);
+      return total + Number(output?.value ?? 0);
     }, 0);
   }
 
@@ -2780,6 +2786,27 @@ function getTransactionWalletAmount(tx, ownedAddress, isSending) {
 
     return total + Number(output?.value ?? 0);
   }, 0);
+}
+
+function getFirstExternalOutput(tx, ownedAddress) {
+  return (tx?.vout ?? []).find((output) => output?.scriptpubkey_address !== ownedAddress) ?? null;
+}
+
+function prioritizeWalletTransactions(txs, ownedAddress) {
+  return [...txs]
+    .map((tx, index) => ({
+      tx,
+      index,
+      isSending: isOutgoingTransaction(tx, ownedAddress),
+    }))
+    .sort((left, right) => {
+      if (left.isSending !== right.isSending) {
+        return left.isSending ? -1 : 1;
+      }
+
+      return left.index - right.index;
+    })
+    .map((entry) => entry.tx);
 }
 
 function getTransactionStatusIcon(isSending, confirmations) {
