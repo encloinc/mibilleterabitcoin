@@ -91,6 +91,7 @@ fn render_app(config: &AppConfig) -> Markup {
                 script {
                     (PreEscaped(format!("window.APP_CONFIG = {};", client_config)))
                 }
+                script src="/assets/scripts/anime.min.js" {}
                 script type="module" src="/assets/app.js" {}
             }
         }

@@ -41,6 +41,22 @@ const state = {
   walletReady: false,
 };
 
+const CARD_TRANSITION_DURATION = 220;
+const CARD_TRANSITION_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
+const CARD_TRANSITION_DISTANCE = 12;
+const CARD_TRANSITION_NEUTRAL_Y = 10;
+const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+const navigationState = {
+  activeScreenId: null,
+  historyIndex: 0,
+  suppressNextHashChange: false,
+  transitionToken: 0,
+  transitionLayer: null,
+  animatedScreen: null,
+  transitionAnimation: null,
+  transitionTargets: [],
+};
+
 const ALL_SCREEN_IDS = [
   "landing-screen",
   "create-screen",
@@ -70,13 +86,23 @@ const routeLinks = [...document.querySelectorAll("[data-route-link]")];
 const submitLinks = [...document.querySelectorAll("[data-submit-form]")];
 const scrollFadeTargets = [...document.querySelectorAll("[data-scroll-fade-target]")];
 const dragScrollAreas = [...document.querySelectorAll("[data-drag-scroll-area]")];
+const screenStage = document.querySelector(".screen-stage");
+const animeEngine = window.anime;
 
+initializeHistoryState();
 bindEventHandlers();
 boot();
 
 function bindEventHandlers() {
-  window.addEventListener("popstate", syncRoute);
-  window.addEventListener("hashchange", syncRoute);
+  window.addEventListener("popstate", handlePopState);
+  window.addEventListener("hashchange", () => {
+    if (navigationState.suppressNextHashChange) {
+      navigationState.suppressNextHashChange = false;
+      return;
+    }
+
+    syncRoute({ direction: "neutral" });
+  });
 
   trackedForms.forEach((form) => {
     bindSubmitState(form);
@@ -294,45 +320,51 @@ async function boot() {
   }
 
   syncFormButtonStates();
-  syncRoute();
+  syncRoute({ direction: "neutral", immediate: true });
 }
 
-function syncRoute() {
+function syncRoute(options = {}) {
+  const { direction = "neutral", immediate = false } = options;
+
   switch (getCurrentPath()) {
     case ROUTES.landing:
       if (loadEncryptedWallet()) {
-        navigateTo(ROUTES.unlockWallet);
+        navigateTo(ROUTES.unlockWallet, "", { direction: "neutral", immediate });
         return;
       }
-      showScreen("landing-screen");
+      showScreen("landing-screen", { direction, immediate });
       break;
     case ROUTES.createWallet:
-      syncCreateWalletRoute();
+      syncCreateWalletRoute({ direction, immediate });
       break;
     case ROUTES.importWallet:
-      syncImportWalletRoute();
+      syncImportWalletRoute({ direction, immediate });
       break;
     case ROUTES.unlockWallet:
       if (!loadEncryptedWallet()) {
-        navigateTo(ROUTES.landing);
+        navigateTo(ROUTES.landing, "", { direction: "neutral", immediate });
         return;
       }
-      showScreen("unlock-screen");
+      showScreen("unlock-screen", { direction, immediate });
       break;
     case ROUTES.wallet:
-      syncWalletRoute();
+      syncWalletRoute({ direction, immediate });
       break;
     default:
-      navigateTo(ROUTES.landing);
+      navigateTo(ROUTES.landing, "", { direction: "neutral", immediate });
   }
 }
 
-function syncCreateWalletRoute() {
-  let hash = normalizeHash(window.location.hash, CREATE_WALLET_STEPS.defaultHash, CREATE_WALLET_STEPS.hashToScreen);
+function syncCreateWalletRoute(options = {}) {
+  const { direction = "neutral", immediate = false } = options;
+  let hash = normalizeHash(window.location.hash, CREATE_WALLET_STEPS.defaultHash, CREATE_WALLET_STEPS.hashToScreen, {
+    direction,
+    immediate,
+  });
 
   if ((hash === "#backup" || hash === "#confirm-backup") && (!state.pendingWallet || !state.pendingPassword)) {
     clearCreateState();
-    updateHash(CREATE_WALLET_STEPS.defaultHash, { replace: true });
+    updateHash(CREATE_WALLET_STEPS.defaultHash, { replace: true, direction: "backward", immediate });
     return;
   }
 
@@ -346,49 +378,54 @@ function syncCreateWalletRoute() {
     }
   }
 
-  showScreen(CREATE_WALLET_STEPS.hashToScreen[hash]);
+  showScreen(CREATE_WALLET_STEPS.hashToScreen[hash], { direction, immediate });
   syncFormButtonStates();
 }
 
-function syncImportWalletRoute() {
-  let hash = normalizeHash(window.location.hash, IMPORT_WALLET_STEPS.defaultHash, IMPORT_WALLET_STEPS.hashToScreen);
+function syncImportWalletRoute(options = {}) {
+  const { direction = "neutral", immediate = false } = options;
+  let hash = normalizeHash(window.location.hash, IMPORT_WALLET_STEPS.defaultHash, IMPORT_WALLET_STEPS.hashToScreen, {
+    direction,
+    immediate,
+  });
 
   if (hash === "#choose-password" && !state.pendingImportMnemonic) {
-    updateHash(IMPORT_WALLET_STEPS.defaultHash, { replace: true });
+    updateHash(IMPORT_WALLET_STEPS.defaultHash, { replace: true, direction: "backward", immediate });
     return;
   }
 
-  showScreen(IMPORT_WALLET_STEPS.hashToScreen[hash]);
+  showScreen(IMPORT_WALLET_STEPS.hashToScreen[hash], { direction, immediate });
   syncFormButtonStates();
 }
 
-function syncWalletRoute() {
+function syncWalletRoute(options = {}) {
+  const { direction = "neutral", immediate = false } = options;
   const payload = loadEncryptedWallet();
   if (!payload) {
-    navigateTo(ROUTES.landing);
+    navigateTo(ROUTES.landing, "", { direction: "backward", immediate });
     return;
   }
 
   renderWallet(state.activeWallet || { address: payload.address || "" });
-  showScreen("menu-screen");
+  showScreen("menu-screen", { direction, immediate });
 }
 
 function handleBackNavigation(currentScreenId, targetScreenId) {
   if (getCurrentPath() === ROUTES.createWallet) {
     if (targetScreenId === "landing-screen") {
       clearCreateState();
-      navigateTo(ROUTES.landing);
+      navigateTo(ROUTES.landing, "", { direction: "backward" });
       return;
     }
 
     if (targetScreenId === "create-screen") {
       clearCreateState();
-      updateHash(CREATE_WALLET_STEPS.defaultHash);
+      updateHash(CREATE_WALLET_STEPS.defaultHash, { direction: "backward" });
       return;
     }
 
     if (targetScreenId === "backup-screen") {
-      updateHash("#backup");
+      updateHash("#backup", { direction: "backward" });
       return;
     }
   }
@@ -396,51 +433,65 @@ function handleBackNavigation(currentScreenId, targetScreenId) {
   if (getCurrentPath() === ROUTES.importWallet) {
     if (targetScreenId === "landing-screen") {
       clearImportForm();
-      navigateTo(ROUTES.landing);
+      navigateTo(ROUTES.landing, "", { direction: "backward" });
       return;
     }
 
     if (targetScreenId === "import-phrase-screen") {
-      updateHash(IMPORT_WALLET_STEPS.defaultHash);
+      updateHash(IMPORT_WALLET_STEPS.defaultHash, { direction: "backward" });
       return;
     }
   }
 
   if (currentScreenId === "unlock-screen" && targetScreenId === "landing-screen") {
-    navigateTo(ROUTES.landing);
+    navigateTo(ROUTES.landing, "", { direction: "backward" });
     return;
   }
 
-  navigateTo(ROUTES.landing);
+  navigateTo(ROUTES.landing, "", { direction: "backward" });
 }
 
-function showScreen(activeScreenId) {
-  ALL_SCREEN_IDS.forEach((screenId) => {
-    const screen = document.getElementById(screenId);
-    if (!screen) {
-      return;
-    }
+function showScreen(activeScreenId, options = {}) {
+  const { direction = "neutral", immediate = false } = options;
+  const nextScreen = document.getElementById(activeScreenId);
+  if (!nextScreen) {
+    return;
+  }
 
-    screen.classList.toggle("hidden", screenId !== activeScreenId);
-  });
+  const currentScreen = navigationState.activeScreenId
+    ? document.getElementById(navigationState.activeScreenId)
+    : getVisibleScreen();
 
-  syncScrollFadeTargets();
+  if (!currentScreen || currentScreen.id === activeScreenId || immediate || prefersReducedMotion || !screenStage || !animeEngine) {
+    cleanupCardTransition();
+    setVisibleScreen(activeScreenId);
+    navigationState.activeScreenId = activeScreenId;
+    syncScrollFadeTargets();
+    return;
+  }
+
+  animateCardTransition(currentScreen, nextScreen, activeScreenId, direction);
 }
 
-function navigateTo(path, hash = "") {
+function navigateTo(path, hash = "", options = {}) {
+  const { direction = normalizePath(path) === getCurrentPath() ? "forward" : "neutral", immediate = false } = options;
   const nextUrl = `${path}${hash}`;
   const currentUrl = `${getCurrentPath()}${window.location.hash}`;
   if (nextUrl !== currentUrl) {
-    history.pushState(null, "", nextUrl);
+    const nextIndex = navigationState.historyIndex + 1;
+    history.pushState({ navIndex: nextIndex }, "", nextUrl);
+    navigationState.historyIndex = nextIndex;
   }
-  syncRoute();
+  syncRoute({ direction, immediate });
 }
 
 function updateHash(hash, options = {}) {
-  const { replace = false } = options;
+  const { replace = false, direction = "forward", immediate = false } = options;
   const method = replace ? "replaceState" : "pushState";
-  history[method](null, "", `${getCurrentPath()}${hash}`);
-  syncRoute();
+  const nextIndex = replace ? navigationState.historyIndex : navigationState.historyIndex + 1;
+  history[method]({ navIndex: nextIndex }, "", `${getCurrentPath()}${hash}`);
+  navigationState.historyIndex = nextIndex;
+  syncRoute({ direction, immediate });
 }
 
 function getCurrentPath() {
@@ -455,13 +506,242 @@ function normalizePath(pathname) {
   return pathname.replace(/\/+$/, "");
 }
 
-function normalizeHash(hash, defaultHash, hashToScreen) {
+function normalizeHash(hash, defaultHash, hashToScreen, options = {}) {
   if (!hash || !(hash in hashToScreen)) {
-    updateHash(defaultHash, { replace: true });
+    updateHash(defaultHash, { replace: true, ...options });
     return defaultHash;
   }
 
   return hash;
+}
+
+function initializeHistoryState() {
+  const historyIndex = getHistoryIndex(history.state);
+  if (historyIndex === null) {
+    history.replaceState({ navIndex: 0 }, "", `${getCurrentPath()}${window.location.hash}`);
+    navigationState.historyIndex = 0;
+    return;
+  }
+
+  navigationState.historyIndex = historyIndex;
+}
+
+function handlePopState(event) {
+  const nextHistoryIndex = getHistoryIndex(event.state);
+  const direction =
+    nextHistoryIndex !== null && nextHistoryIndex < navigationState.historyIndex ? "backward" : "forward";
+
+  navigationState.suppressNextHashChange = true;
+
+  if (nextHistoryIndex !== null) {
+    navigationState.historyIndex = nextHistoryIndex;
+  }
+
+  syncRoute({ direction });
+}
+
+function getHistoryIndex(historyState) {
+  return typeof historyState?.navIndex === "number" ? historyState.navIndex : null;
+}
+
+function getVisibleScreen() {
+  return ALL_SCREEN_IDS.map((screenId) => document.getElementById(screenId)).find(
+    (screen) => screen && !screen.classList.contains("hidden"),
+  );
+}
+
+function setVisibleScreen(activeScreenId) {
+  ALL_SCREEN_IDS.forEach((screenId) => {
+    const screen = document.getElementById(screenId);
+    if (!screen) {
+      return;
+    }
+
+    screen.classList.toggle("hidden", screenId !== activeScreenId);
+    screen.style.visibility = "";
+  });
+}
+
+function animateCardTransition(currentScreen, nextScreen, activeScreenId, direction) {
+  cleanupCardTransition();
+
+  const transitionToken = ++navigationState.transitionToken;
+  setGlobalTransitionLock(true);
+  const stageRect = screenStage.getBoundingClientRect();
+  const currentRect = currentScreen.getBoundingClientRect();
+  const nextRect = measureScreenRect(nextScreen);
+  const layer = createTransitionLayer();
+  const incomingClone = createTransitionClone(nextScreen);
+  layer.append(incomingClone);
+  screenStage.append(layer);
+
+  setTransitionLayerFrame(layer, nextRect, stageRect);
+  navigationState.transitionLayer = layer;
+  navigationState.animatedScreen = currentScreen;
+  navigationState.transitionTargets = [currentScreen, incomingClone, screenStage];
+
+  const incoming = getCardTransitionSteps(direction);
+  const currentHeight = Math.round(currentRect.height);
+  const nextHeight = Math.round(nextRect.height);
+
+  screenStage.style.height = `${currentHeight}px`;
+
+  const animationOptions = {
+    autoplay: false,
+    onComplete: () => {
+      if (transitionToken !== navigationState.transitionToken) {
+        return;
+      }
+
+      setVisibleScreen(activeScreenId);
+      cleanupCardTransition();
+      navigationState.activeScreenId = activeScreenId;
+      syncScrollFadeTargets();
+    },
+  };
+
+  currentScreen.style.pointerEvents = "none";
+  navigationState.transitionAnimation = animeEngine.createTimeline(animationOptions);
+  navigationState.transitionAnimation
+    .add(
+      currentScreen,
+      {
+        opacity: [1, 0],
+        duration: CARD_TRANSITION_DURATION,
+        ease: CARD_TRANSITION_EASING,
+      },
+      0,
+    )
+    .add(
+      incomingClone,
+      {
+        ...incoming,
+        duration: CARD_TRANSITION_DURATION,
+        ease: CARD_TRANSITION_EASING,
+      },
+      0,
+    )
+    .add(
+      screenStage,
+      {
+        height: [`${currentHeight}px`, `${nextHeight}px`],
+        duration: CARD_TRANSITION_DURATION,
+        ease: CARD_TRANSITION_EASING,
+      },
+      0,
+    )
+    .init();
+  navigationState.transitionAnimation.play();
+}
+
+function cleanupCardTransition() {
+  if (navigationState.transitionAnimation) {
+    navigationState.transitionAnimation.cancel();
+    navigationState.transitionAnimation = null;
+  }
+
+  if (animeEngine && navigationState.transitionTargets.length > 0) {
+    animeEngine.remove(navigationState.transitionTargets);
+  }
+
+  if (navigationState.animatedScreen) {
+    navigationState.animatedScreen.style.pointerEvents = "";
+    navigationState.animatedScreen.style.opacity = "";
+    navigationState.animatedScreen.style.transform = "";
+    navigationState.animatedScreen = null;
+  }
+
+  screenStage.style.height = "";
+  setGlobalTransitionLock(false);
+  navigationState.transitionLayer?.remove();
+  navigationState.transitionLayer = null;
+  navigationState.transitionTargets = [];
+}
+
+function createTransitionLayer() {
+  const layer = document.createElement("div");
+  layer.className = "screen-transition-layer";
+  return layer;
+}
+
+function createTransitionClone(screen) {
+  const clone = screen.cloneNode(true);
+  stripCloneIds(clone);
+  clone.classList.remove("hidden");
+  clone.classList.add("screen-transition-card");
+  return clone;
+}
+
+function measureScreenRect(screen) {
+  const wasHidden = screen.classList.contains("hidden");
+  const previousInlineStyles = {
+    position: screen.style.position,
+    left: screen.style.left,
+    top: screen.style.top,
+    transform: screen.style.transform,
+    visibility: screen.style.visibility,
+    pointerEvents: screen.style.pointerEvents,
+    zIndex: screen.style.zIndex,
+  };
+
+  if (wasHidden) {
+    screen.classList.remove("hidden");
+  }
+
+  screen.style.position = "absolute";
+  screen.style.left = "50%";
+  screen.style.top = "0";
+  screen.style.transform = "translateX(-50%)";
+  screen.style.visibility = "hidden";
+  screen.style.pointerEvents = "none";
+  screen.style.zIndex = "-1";
+
+  const rect = screen.getBoundingClientRect();
+
+  screen.style.position = previousInlineStyles.position;
+  screen.style.left = previousInlineStyles.left;
+  screen.style.top = previousInlineStyles.top;
+  screen.style.transform = previousInlineStyles.transform;
+  screen.style.visibility = previousInlineStyles.visibility;
+  screen.style.pointerEvents = previousInlineStyles.pointerEvents;
+  screen.style.zIndex = previousInlineStyles.zIndex;
+
+  if (wasHidden) {
+    screen.classList.add("hidden");
+  }
+
+  return rect;
+}
+
+function setTransitionLayerFrame(layer, elementRect, stageRect) {
+  layer.style.left = `${elementRect.left - stageRect.left}px`;
+  layer.style.top = `${elementRect.top - stageRect.top}px`;
+  layer.style.width = `${elementRect.width}px`;
+  layer.style.height = `${elementRect.height}px`;
+}
+
+function stripCloneIds(node) {
+  if (node.nodeType !== Node.ELEMENT_NODE) {
+    return;
+  }
+
+  node.removeAttribute("id");
+  node.querySelectorAll("[id]").forEach((element) => {
+    element.removeAttribute("id");
+  });
+}
+
+function getCardTransitionSteps(direction) {
+  return {
+    translateY: [CARD_TRANSITION_NEUTRAL_Y, 0],
+    opacity: [0, 1],
+    scale: [0.992, 1],
+  };
+}
+
+function setGlobalTransitionLock(isLocked) {
+  document.documentElement.classList.toggle("is-card-transitioning", isLocked);
+  document.body.classList.toggle("is-card-transitioning", isLocked);
 }
 
 function ensureWalletReady() {
