@@ -1,7 +1,7 @@
 {
   "network": "mainnet",
   "host": "127.0.0.1",
-  "port": 3000,
+  "port": 4650,
   "required_confirmations": 1,
   "tx_refresh_pages_max": 3,
   "electrs_esplora_endpoints": {

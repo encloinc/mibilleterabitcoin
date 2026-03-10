@@ -617,22 +617,22 @@ a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transition: none;
 }
 
-.back-arrow:hover {
+.back-arrow:hover,
+.back-arrow:active,
+.back-arrow:focus-visible {
   transform: none;
   background: transparent;
+  box-shadow: none;
 }
 
 .back-arrow-icon {
   width: 18px;
   height: 18px;
   transform: none;
-  transition: transform 160ms ease;
-}
-
-.back-arrow:hover .back-arrow-icon {
-  transform: scale(1.08);
+  transition: none;
 }
 
 .breadcrumbs {

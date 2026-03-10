@@ -1046,7 +1046,7 @@ function showScreen(activeScreenId, options = {}) {
     return;
   }
 
-  animateCardTransition(currentScreen, nextScreen, activeScreenId, direction);
+  animateCardTransition(currentScreen, nextScreen, activeScreenId, normalizeTransitionDirection(direction));
 }
 
 function navigateTo(path, hash = "", options = {}) {
@@ -1137,7 +1137,7 @@ function initializeHistoryState() {
 function handlePopState(event) {
   const nextHistoryIndex = getHistoryIndex(event.state);
   const direction =
-    nextHistoryIndex !== null && nextHistoryIndex < navigationState.historyIndex ? "backward" : "forward";
+    nextHistoryIndex !== null && nextHistoryIndex < navigationState.historyIndex ? "neutral" : "forward";
 
   navigationState.suppressNextHashChange = true;
 
@@ -1198,12 +1198,15 @@ function syncFlashWidth(screen = getVisibleScreen()) {
   }
 }
 
+function normalizeTransitionDirection(direction) {
+  return direction === "backward" ? "neutral" : direction;
+}
+
 function animateCardTransition(currentScreen, nextScreen, activeScreenId, direction) {
   cleanupCardTransition();
 
   const transitionToken = ++navigationState.transitionToken;
   setGlobalTransitionLock(true);
-  const stageRect = screenStage.getBoundingClientRect();
   const currentRect = currentScreen.getBoundingClientRect();
   const nextRect = measureScreenRect(nextScreen);
   const layer = createTransitionLayer();
@@ -1211,7 +1214,7 @@ function animateCardTransition(currentScreen, nextScreen, activeScreenId, direct
   layer.append(incomingClone);
   screenStage.append(layer);
 
-  setTransitionLayerFrame(layer, nextRect, stageRect);
+  setTransitionLayerFrame(layer, nextRect);
   navigationState.transitionLayer = layer;
   navigationState.animatedScreen = currentScreen;
 
@@ -1249,12 +1252,12 @@ function animateCardTransition(currentScreen, nextScreen, activeScreenId, direct
     incomingClone.animate(
       [
         {
-          opacity: 0,
-          transform: `translateY(${CARD_TRANSITION_NEUTRAL_Y}px) scale(0.992)`,
+          opacity: incoming.opacity[0],
+          transform: `translateY(${incoming.translateY[0]}px) scale(${incoming.scale[0]})`,
         },
         {
-          opacity: 1,
-          transform: "translateY(0) scale(1)",
+          opacity: incoming.opacity[1],
+          transform: `translateY(${incoming.translateY[1]}px) scale(${incoming.scale[1]})`,
         },
       ],
       nativeAnimationOptions,
@@ -1407,11 +1410,12 @@ function measureScreenRect(screen) {
   return rect;
 }
 
-function setTransitionLayerFrame(layer, elementRect, stageRect) {
-  layer.style.left = `${elementRect.left - stageRect.left}px`;
-  layer.style.top = `${elementRect.top - stageRect.top}px`;
+function setTransitionLayerFrame(layer, elementRect) {
+  layer.style.left = "50%";
+  layer.style.top = "0";
   layer.style.width = `${elementRect.width}px`;
   layer.style.height = `${elementRect.height}px`;
+  layer.style.transform = "translateX(-50%)";
 }
 
 function stripCloneIds(node) {
